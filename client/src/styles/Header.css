@@ -1,0 +1,11 @@
+/* ─── Header Glass ───────────────────────────────────────── */
+.header-glass {
+  background: rgba(255,255,255,0.92) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* ─── Dark Mode ──────────────────────────────────────────── */
+body.dark-mode .header-glass {
+  background: rgba(31,41,55,0.92) !important;
+}

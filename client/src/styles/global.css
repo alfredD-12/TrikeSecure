@@ -1,0 +1,98 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* ─── Base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  -webkit-tap-highlight-color: transparent;
+  background-color: #f3f4f6;
+  overscroll-behavior-y: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ─── Leaflet Overrides ──────────────────────────────────── */
+.leaflet-tile-container { transition: opacity 0.3s ease; }
+
+.leaflet-popup-content-wrapper {
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.leaflet-popup-tip { box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1); }
+
+/* ─── Shared Utilities ───────────────────────────────────── */
+.btn-press { transition: transform 0.1s ease, background-color 0.2s ease, opacity 0.2s ease; }
+.btn-press:active { transform: scale(0.96); }
+
+.radar-ping { animation: radar 2s cubic-bezier(0, 0.2, 0.8, 1) infinite; }
+
+@keyframes radar {
+  0%   { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ─── Dark Mode — Base ───────────────────────────────────── */
+body.dark-mode { background-color: #111827; }
+
+/* Headings & generic text */
+body.dark-mode h1, body.dark-mode h2, body.dark-mode h3, body.dark-mode h4 { color: #f3f4f6 !important; }
+body.dark-mode p   { color: #d1d5db; }
+
+/* Tailwind text utilities → light equivalents */
+body.dark-mode .text-gray-900  { color: #f3f4f6 !important; }
+body.dark-mode .text-gray-800  { color: #f3f4f6 !important; }
+body.dark-mode .text-gray-700  { color: #e5e7eb !important; }
+body.dark-mode .text-gray-600  { color: #d1d5db !important; }
+body.dark-mode .text-gray-500  { color: #9ca3af !important; }
+body.dark-mode .text-gray-400  { color: #9ca3af !important; }
+
+/* Tailwind background utilities → dark equivalents */
+body.dark-mode .bg-white       { background-color: #374151 !important; }
+body.dark-mode .bg-gray-50     { background-color: #1f2937 !important; }
+body.dark-mode .bg-gray-100    { background-color: #374151 !important; }
+
+/* Soft-coloured accent backgrounds */
+body.dark-mode .bg-blue-50     { background-color: #1e3a5f !important; }
+body.dark-mode .bg-blue-100    { background-color: #1e3a5f !important; }
+body.dark-mode .bg-red-50      { background-color: #3b1212 !important; }
+body.dark-mode .bg-red-100     { background-color: #3b1212 !important; }
+
+/* Accent text on dark backgrounds */
+body.dark-mode .text-blue-700  { color: #93c5fd !important; }
+body.dark-mode .text-blue-600  { color: #93c5fd !important; }
+body.dark-mode .text-red-600   { color: #fca5a5 !important; }
+body.dark-mode .text-red-500   { color: #fca5a5 !important; }
+
+/* Borders */
+body.dark-mode .border-gray-100,
+body.dark-mode .border-gray-200 { border-color: #4b5563 !important; }
+body.dark-mode .border-gray-50  { border-color: #374151 !important; }
+body.dark-mode .border-blue-100 { border-color: #1e3a5f !important; }
+body.dark-mode .border-red-100  { border-color: #4b1818 !important; }
+
+/* Misc backgrounds */
+body.dark-mode .bg-gray-200     { background-color: #4b5563 !important; }
+body.dark-mode .bg-gray-300     { background-color: #6b7280 !important; }
+
+/* Nav bar */
+body.dark-mode nav { background: rgba(31,41,55,0.95) !important; border-color: #374151 !important; }
+body.dark-mode nav .text-gray-400 { color: #6b7280 !important; }
+
+/* Inputs, textareas, selects */
+body.dark-mode input,
+body.dark-mode textarea,
+body.dark-mode select {
+  color: #f3f4f6 !important;
+  background-color: #374151 !important;
+  border-color: #4b5563 !important;
+}
+body.dark-mode input::placeholder,
+body.dark-mode textarea::placeholder { color: #6b7280 !important; }
+body.dark-mode select option { background-color: #374151; color: #f3f4f6; }

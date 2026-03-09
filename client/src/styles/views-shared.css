@@ -1,0 +1,510 @@
+/* ── Shared View Styles (Driver & Commuter) ─────────────── */
+
+/* ═══ Glass card used inside sheets ═══ */
+.v-glass {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(12px) saturate(1.4);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.2s;
+}
+
+/* ═══ Gradient red primary button ═══ */
+.v-btn-primary {
+  width: 100%;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  padding: 14px;
+  border-radius: 16px;
+  border: none;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 18px rgba(220, 38, 38, 0.32);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.v-btn-primary:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 10px rgba(220, 38, 38, 0.28);
+}
+
+/* Green variant for driver */
+.v-btn-accept {
+  flex: 1;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: white;
+  padding: 14px;
+  border-radius: 14px;
+  border: none;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.v-btn-accept:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25);
+}
+
+/* Dark variant */
+.v-btn-dark {
+  width: 100%;
+  background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+  color: white;
+  padding: 14px;
+  border-radius: 16px;
+  border: none;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.v-btn-dark:active {
+  transform: scale(0.97);
+}
+
+/* Secondary / ghost button */
+.v-btn-ghost {
+  padding: 14px 24px;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid #e5e7eb;
+  border-radius: 14px;
+  font-weight: 700;
+  font-size: 14px;
+  color: #4b5563;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.v-btn-ghost:active {
+  transform: scale(0.97);
+}
+
+/* ═══ Glass bottom nav ═══ */
+.v-nav {
+  position: fixed;
+  bottom: 0;
+  width: 100%;
+  max-width: 32rem; /* max-w-lg */
+  margin: 0 auto;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(20px) saturate(1.7);
+  -webkit-backdrop-filter: blur(20px) saturate(1.7);
+  border-top: 1px solid rgba(255, 255, 255, 0.4);
+  display: flex;
+  justify-content: space-around;
+  padding: 10px 8px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 50;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.04);
+}
+
+.v-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 16px;
+  width: 72px;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.1s;
+  color: #9ca3af;
+  position: relative;
+}
+
+.v-nav-item.active {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+/* Driver uses green accent */
+.v-nav-item.active-green {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.v-nav-item:active {
+  transform: scale(0.93);
+}
+
+.v-nav-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Active dot indicator */
+.v-nav-item.active::after,
+.v-nav-item.active-green::after {
+  content: '';
+  position: absolute;
+  bottom: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ═══ Glass input field ═══ */
+.v-input-wrap {
+  position: relative;
+  border: 1.5px solid rgba(229, 231, 235, 0.8);
+  border-radius: 16px;
+  background: rgba(249, 250, 251, 0.6);
+  backdrop-filter: blur(8px);
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.v-input-wrap:focus-within {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.v-input-wrap input,
+.v-input-wrap textarea,
+.v-input-wrap select {
+  width: 100%;
+  background: transparent !important;
+  border: none !important;
+  outline: none;
+  padding: 14px 14px 14px 44px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.v-input-wrap .v-input-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  transition: color 0.2s;
+}
+
+.v-input-wrap:focus-within .v-input-icon {
+  color: #ef4444;
+}
+
+/* ═══ Stat card ═══ */
+.v-stat-card {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 18px;
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+}
+
+/* ═══ Section stagger entrance ═══ */
+.v-anim {
+  opacity: 0;
+  transform: translateY(14px);
+  animation: v-fadein 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.v-anim--1 { animation-delay: 0.04s; }
+.v-anim--2 { animation-delay: 0.10s; }
+.v-anim--3 { animation-delay: 0.17s; }
+.v-anim--4 { animation-delay: 0.24s; }
+.v-anim--5 { animation-delay: 0.30s; }
+.v-anim--6 { animation-delay: 0.36s; }
+
+@keyframes v-fadein {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ═══ Earnings card (driver) ═══ */
+.v-earnings-card {
+  background: linear-gradient(135deg, #1f2937 0%, #111827 70%, #0f172a 100%);
+  color: white;
+  padding: 24px;
+  border-radius: 24px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+
+.v-earnings-card::before {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
+  filter: blur(30px);
+}
+
+/* ═══ Online status card (driver) ═══ */
+.v-online-card {
+  background: rgba(220, 252, 231, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(187, 247, 208, 0.5);
+  border-radius: 20px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.35s ease;
+}
+
+/* ═══ Offline status card (driver) ═══ */
+.v-offline-card {
+  background: rgba(254, 226, 226, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(252, 165, 165, 0.4);
+  border-radius: 20px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: all 0.35s ease;
+}
+
+/* ═══ Booking request card ═══ */
+.v-booking-card {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+}
+
+/* ═══ Profile card ═══ */
+.v-profile-card {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 24px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ═══ Menu row button ═══ */
+.v-menu-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 16px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.2s;
+}
+
+.v-menu-row:active {
+  transform: scale(0.98);
+}
+
+/* ═══ Scanner box ═══ */
+.v-scanner-box {
+  background: rgba(243, 244, 246, 0.6);
+  backdrop-filter: blur(8px);
+  border: 3px solid rgba(255, 255, 255, 0.5);
+  border-radius: 24px;
+  aspect-ratio: 1;
+  width: 100%;
+  max-width: 260px;
+  margin: 0 auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* ═══ Chip / quick pick button ═══ */
+.v-chip {
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid rgba(229, 231, 235, 0.8);
+  padding: 10px 18px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.v-chip:active {
+  transform: scale(0.96);
+}
+
+.v-chip:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* ═══ GPS locate button ═══ */
+.v-gps-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(219, 234, 254, 0.5);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid rgba(147, 197, 253, 0.4);
+  color: #1d4ed8;
+  padding: 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.2s;
+}
+
+.v-gps-btn:active {
+  transform: scale(0.97);
+}
+
+.v-gps-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ═══ FROM / TO route panel ═══ */
+.v-route-panel {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 24px;
+  padding: 20px;
+  position: relative;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+
+/* The vertical dotted line connecting FROM → TO */
+.v-route-line {
+  position: absolute;
+  left: 30px;
+  top: 38px;
+  bottom: 38px;
+  width: 2px;
+  background: repeating-linear-gradient(
+    to bottom,
+    #d1d5db 0px,
+    #d1d5db 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+/* ═══ Dark mode overrides ═══ */
+body.dark-mode .v-glass,
+body.dark-mode .v-booking-card,
+body.dark-mode .v-stat-card,
+body.dark-mode .v-menu-row,
+body.dark-mode .v-profile-card,
+body.dark-mode .v-route-panel {
+  background: rgba(30, 30, 40, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+body.dark-mode .v-nav {
+  background: rgba(17, 24, 39, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-mode .v-nav-item.active {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+body.dark-mode .v-nav-item.active-green {
+  background: rgba(22, 163, 74, 0.12);
+}
+
+body.dark-mode .v-online-card {
+  background: rgba(22, 78, 46, 0.25) !important;
+  border-color: rgba(34, 197, 94, 0.15) !important;
+}
+
+body.dark-mode .v-offline-card {
+  background: rgba(95, 25, 25, 0.25) !important;
+  border-color: rgba(239, 68, 68, 0.15) !important;
+}
+
+body.dark-mode .v-chip {
+  background: rgba(40, 40, 50, 0.6);
+  border-color: #333;
+  color: #e5e5e5;
+}
+
+body.dark-mode .v-gps-btn {
+  background: rgba(30, 58, 95, 0.4);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+}
+
+body.dark-mode .v-input-wrap {
+  background: rgba(40, 40, 48, 0.5);
+  border-color: #333;
+}
+
+body.dark-mode .v-input-wrap:focus-within {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+body.dark-mode .v-scanner-box {
+  background: rgba(30, 30, 40, 0.5);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+body.dark-mode .v-earnings-card {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+}
+
+body.dark-mode .v-route-line {
+  background: repeating-linear-gradient(
+    to bottom,
+    #4b5563 0px,
+    #4b5563 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
