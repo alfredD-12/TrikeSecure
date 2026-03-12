@@ -42,9 +42,18 @@ function MapController({ mapRef }) {
 
 // Handles map clicks when pick mode is active
 function MapClickHandler() {
-  const { pinTarget, setPinTarget, setUserPickup, setDestination, setDestinationPin } = useApp();
+  const { view, pinTarget, setPinTarget, setUserPickup, setDestination, setDestinationPin } = useApp();
   useMapEvents({
     click: async (e) => {
+      if (view === 'commuter') {
+        const sheet = document.getElementById('commuter-sheet');
+        if (sheet) {
+          const collapseTo = Math.max(0, sheet.offsetHeight - 100);
+          sheet.style.transition = 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
+          sheet.style.transform = `translateY(${collapseTo}px)`;
+        }
+      }
+
       if (!pinTarget) return;
       const { lat, lng } = e.latlng;
       let label;

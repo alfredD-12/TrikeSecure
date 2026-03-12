@@ -1,13 +1,21 @@
 const API_URL = 'http://localhost:5000/api';
 
-export async function register(username, email, password) {
+async function parseResponse(res) {
+  const data = await res.json().catch(() => ({ message: 'Unexpected server response.' }));
+  if (!res.ok) {
+    return { message: data?.message || 'Request failed.' };
+  }
+  return data;
+}
+
+export async function register(fullName, username, email, password) {
   const res = await fetch(`${API_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ username, email, password }),
+    body: JSON.stringify({ fullName, username, email, password }),
   });
-  return res.json();
+  return parseResponse(res);
 }
 
 export async function login(email, password) {
@@ -17,7 +25,7 @@ export async function login(email, password) {
     credentials: 'include',
     body: JSON.stringify({ email, password }),
   });
-  return res.json();
+  return parseResponse(res);
 }
 
 export async function logout() {
@@ -25,12 +33,12 @@ export async function logout() {
     method: 'POST',
     credentials: 'include',
   });
-  return res.json();
+  return parseResponse(res);
 }
 
 export async function getMe() {
   const res = await fetch(`${API_URL}/auth/me`, {
     credentials: 'include',
   });
-  return res.json();
+  return parseResponse(res);
 }

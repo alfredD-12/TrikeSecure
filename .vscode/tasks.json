@@ -1,37 +1,71 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "Start Server",
-      "type": "shell",
-      "command": "npm run dev",
-      "options": {
-        "cwd": "${workspaceFolder}/server"
-      },
-      "isBackground": true,
-      "problemMatcher": [],
-      "group": "build"
-    },
-    {
-      "label": "Start Client",
-      "type": "shell",
-      "command": "npm run dev",
-      "options": {
-        "cwd": "${workspaceFolder}/client"
-      },
-      "isBackground": true,
-      "problemMatcher": [],
-      "group": "build"
-    },
-    {
-      "label": "Start Full Stack",
-      "dependsOn": ["Start Server", "Start Client"],
-      "dependsOrder": "parallel",
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "problemMatcher": []
-    }
-  ]
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start Server",
+			"type": "shell",
+			"command": "npm run dev",
+			"options": {
+				"cwd": "${workspaceFolder}/server"
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Start Client",
+			"type": "shell",
+			"command": "npm run dev",
+			"options": {
+				"cwd": "${workspaceFolder}/client"
+			},
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Start Full Stack",
+			"dependsOn": [
+				"Start Server",
+				"Start Client"
+			],
+			"dependsOrder": "parallel",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": []
+		},
+		{
+			"label": "Install Server Dependencies",
+			"type": "shell",
+			"command": "npm install",
+			"args": [],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Install Server Dependencies (prefix)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"install",
+				"--prefix",
+				"server"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "Check Session Secret Runtime",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"-e",
+				"require('dotenv').config({ path: 'server/.env' }); const s=process.env.SESSION_SECRET||''; console.log('len='+s.length); console.log('isPlaceholder=' + (s==='your_secret_key_here' || s==='changeme' || s==='dev_only_change_this_secret'));"
+			],
+			"isBackground": false,
+			"group": "build"
+		}
+	]
 }

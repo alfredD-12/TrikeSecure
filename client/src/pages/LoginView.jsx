@@ -1,46 +1,111 @@
 import { useState } from 'react';
-import { Phone, Lock, LogIn, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, LogIn, Loader2, Eye, EyeOff, UserPlus, User } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
+import { login, register } from '../api';
 import LangToggle from '../components/LangToggle';
 import '../styles/LoginView.css';
 
-// Test accounts (phone → role)
-const ACCOUNTS = {
-  '1': { password: 'pass', role: 'driver' },
-  '2': { password: 'pass', role: 'commuter' },
-};
-
 export default function LoginView() {
-  const { t, setView } = useApp();
-  const [phone, setPhone]       = useState('');
+  const { t, setView, setCurrentUser } = useApp();
+  const [isRegister, setIsRegister] = useState(false);
+  const [role, setRole]         = useState('commuter'); // 'commuter' or 'driver'
+  const [fullName, setFullName] = useState('');
+  const [fullNameFocused, setFullNameFocused] = useState(false);
+
+  const [email, setEmail]       = useState('');
   const [pass, setPass]         = useState('');
   const [showPass, setShowPass] = useState(false);
-  const [error, setError]       = useState(false);
+  const [confirmPass, setConfirmPass] = useState('');
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
-  const [phoneFocused, setPhoneFocused] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
   const [passFocused, setPassFocused]   = useState(false);
+  const [confirmPassFocused, setConfirmPassFocused] = useState(false);
 
-  async function handleLogin(e) {
+  async function handleAction(e) {
     e.preventDefault();
-    const account = ACCOUNTS[phone.trim()];
-    if (!account || account.password !== pass) {
-      setError(true);
+    if (isRegister) {
+      if (!fullName.trim() || !email.trim() || !pass || !confirmPass) {
+        setError('Please fill in all fields.');
+        return;
+      }
+      if (pass.length < 8 || !/[0-9]/.test(pass)) {
+        setError('Password must be at least 8 letters and contain a number.');
+        return;
+      }
+      if (pass !== confirmPass) {
+        setError('Passwords do not match.');
+        return;
+      }
+      setError('');
+      setLoading(true);
+
+      const normalizedEmail = email.trim().toLowerCase();
+      const baseUsername = normalizedEmail.split('@')[0]?.replace(/[^a-zA-Z0-9_]/g, '') || 'user';
+      const username = baseUsername.slice(0, 30);
+      const data = await register(fullName.trim(), username, normalizedEmail, pass);
+
+      setLoading(false);
+      if (data.message === 'User registered successfully.') {
+        setIsRegister(false);
+        setPass('');
+        setConfirmPass('');
+        setError('');
+        return;
+      }
+
+      setError(data.message || 'Registration failed.');
       return;
     }
-    setError(false);
+
+    if (!email.trim() || !pass) {
+      setError('Please enter email and password.');
+      return;
+    }
+
+    setError('');
     setLoading(true);
-    // Simulate brief loading for polished feel
-    await new Promise(r => setTimeout(r, 800));
+
+    const data = await login(email.trim().toLowerCase(), pass);
+
     setLoading(false);
-    setView(account.role);
+    if (data.message === 'Login successful.') {
+      setCurrentUser({
+        username: data.username,
+        fullName: data.fullName || data.username,
+        email: data.email || email.trim().toLowerCase(),
+        role: data.role || role || 'commuter',
+      });
+      setView(data.role || role || 'commuter');
+      return;
+    }
+
+    setError(data.message || 'Invalid credentials. Please try again.');
   }
 
   function socialLogin() {
     setView('commuter');
   }
 
-  const phoneActive = phoneFocused || phone.length > 0;
+  const fullNameActive = fullNameFocused || fullName.length > 0;
+  const emailActive = emailFocused || email.length > 0;
   const passActive  = passFocused || pass.length > 0;
+  const confirmPassActive = confirmPassFocused || confirmPass.length > 0;
+
+  // Password strength logic
+  const getPasswordScore = () => {
+    if (!pass) return 0;
+    let score = 0;
+    if (pass.length >= 8) score += 1;
+    if (/[0-9]/.test(pass)) score += 1;
+    if (/[A-Z]/.test(pass)) score += 1;
+    if (/[^a-zA-Z0-9]/.test(pass)) score += 1;
+    return Math.max(1, score);
+  };
+  const score = getPasswordScore();
+  const barWidth = pass.length === 0 ? '0%' : `${(score / 4) * 100}%`;
+  const barColor = score <= 1 ? '#ef4444' : score === 2 ? '#f59e0b' : score === 3 ? '#3b82f6' : '#22c55e';
 
   return (
     <div className="login-root fixed inset-0 z-[100] flex flex-col overflow-y-auto">
@@ -71,63 +136,153 @@ export default function LoginView() {
         </div>
 
         {/* ── Subtitle — stagger anim 2 ── */}
-        <p className="login-anim login-anim--2 text-center text-gray-500 text-sm font-semibold mb-8">
-          {t('login-subtitle')}
+        <p className="login-anim login-anim--2 text-center text-gray-500 text-sm font-semibold mb-6">
+          {isRegister ? 'Create a new account' : t('login-subtitle')}
         </p>
 
         {/* ── Glass Card ── */}
         <div className="login-anim login-anim--3 login-glass-card">
-          <form className="space-y-5" onSubmit={handleLogin}>
+          <form className="space-y-5" onSubmit={handleAction}>
 
-            {/* Phone — floating label */}
-            <div className={`login-float-group ${phoneActive ? 'active' : ''} ${error ? 'has-error' : ''}`}>
-              <Phone size={18} className="login-float-icon" />
+            {/* Smooth Expandable Register Fields */}
+            <div className={`login-expandable ${isRegister ? 'is-open' : ''}`}>
+              <div className="login-expandable-inner">
+                {/* Role Switcher */}
+                <div className="flex bg-gray-100/50 p-1 rounded-xl border border-gray-200/50">
+                  <button
+                    type="button"
+                    onClick={() => setRole('commuter')}
+                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${role === 'commuter' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    Commuter
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRole('driver')}
+                    className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${role === 'driver' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                  >
+                    Trike Rider
+                  </button>
+                </div>
+
+                {/* Full Name */}
+                <div className={`login-float-group ${fullNameActive ? 'active' : ''} ${error ? 'has-error' : ''}`}>
+                  <User size={18} className="login-float-icon" />
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={fullName}
+                    onChange={e => { setFullName(e.target.value); setError(false); }}
+                    onFocus={() => setFullNameFocused(true)}
+                    onBlur={() => setFullNameFocused(false)}
+                    className="login-float-input"
+                    id="login-fullname"
+                    tabIndex={isRegister ? 0 : -1}
+                  />
+                  <label htmlFor="login-fullname" className="login-float-label">Full Name</label>
+                </div>
+              </div>
+            </div>
+
+            {/* Email — floating label */}
+            <div className={`login-float-group ${emailActive ? 'active' : ''} ${error ? 'has-error' : ''}`}>
+              <Mail size={18} className="login-float-icon" />
               <input
-                type="tel"
-                autoComplete="username"
-                value={phone}
-                onChange={e => { setPhone(e.target.value); setError(false); }}
-                onFocus={() => setPhoneFocused(true)}
-                onBlur={() => setPhoneFocused(false)}
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setError(false); }}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
                 className="login-float-input"
-                id="login-phone"
+                id="login-email"
               />
-              <label htmlFor="login-phone" className="login-float-label">Mobile Number</label>
+              <label htmlFor="login-email" className="login-float-label">Email Address</label>
             </div>
 
             {/* Password — floating label + show/hide */}
-            <div className={`login-float-group ${passActive ? 'active' : ''} ${error ? 'has-error' : ''}`}>
-              <Lock size={18} className="login-float-icon" />
-              <input
-                type={showPass ? 'text' : 'password'}
-                autoComplete="current-password"
-                value={pass}
-                onChange={e => { setPass(e.target.value); setError(false); }}
-                onFocus={() => setPassFocused(true)}
-                onBlur={() => setPassFocused(false)}
-                className="login-float-input login-float-input--pass"
-                id="login-pass"
-              />
-              <label htmlFor="login-pass" className="login-float-label">Password</label>
-              <button
-                type="button"
-                onClick={() => setShowPass(v => !v)}
-                className="login-eye-btn"
-                tabIndex={-1}
-                aria-label={showPass ? 'Hide password' : 'Show password'}
+            <div>
+              <div className={`login-float-group ${passActive ? 'active' : ''} ${error ? 'has-error' : ''}`}>
+                <Lock size={18} className="login-float-icon" />
+                <input
+                  type={showPass ? 'text' : 'password'}
+                  autoComplete={isRegister ? "new-password" : "current-password"}
+                  value={pass}
+                  onChange={e => { setPass(e.target.value); setError(''); }}
+                  onFocus={() => setPassFocused(true)}
+                  onBlur={() => setPassFocused(false)}
+                  className="login-float-input login-float-input--pass"
+                  id="login-pass"
+                />
+                <label htmlFor="login-pass" className="login-float-label">Password</label>
+                <button
+                  type="button"
+                  onClick={() => setShowPass(v => !v)}
+                  className="login-eye-btn"
+                  tabIndex={-1}
+                  aria-label={showPass ? 'Hide password' : 'Show password'}
+                >
+                  {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+
+              {/* Strength Indicator shows conditionally right under password */}
+              <div 
+                style={{ 
+                  height: isRegister ? 'auto' : '0', 
+                  opacity: isRegister ? 1 : 0, 
+                  overflow: 'hidden', 
+                  transition: 'all 0.3s ease' 
+                }}
               >
-                {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
+                <div className="password-strength-container" style={{ marginTop: '8px' }}>
+                   <div className="password-strength-bar-bg" style={{ height: '6px', width: '100%', background: '#e5e7eb', borderRadius: '4px', overflow: 'hidden' }}>
+                      <div className="password-strength-bar-fill" style={{ height: '100%', width: barWidth, backgroundColor: barColor, transition: 'width 0.3s ease, background-color 0.3s ease' }} />
+                   </div>
+                   <p className="password-hint" style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>Password must be 8 letters, have a number, and a symbol</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Expander for Register Password Fields */}
+            <div className={`login-expandable ${isRegister ? 'is-open' : ''}`}>
+              <div className="login-expandable-inner" style={{ paddingTop: '2px' }}>
+                
+                {/* Confirm Password */}
+                <div className={`login-float-group ${confirmPassActive ? 'active' : ''} ${error ? 'has-error' : ''}`}>
+                  <Lock size={18} className="login-float-icon" />
+                  <input
+                    type={showConfirmPass ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    value={confirmPass}
+                    onChange={e => { setConfirmPass(e.target.value); setError(''); }}
+                    onFocus={() => setConfirmPassFocused(true)}
+                    onBlur={() => setConfirmPassFocused(false)}
+                    className="login-float-input login-float-input--pass"
+                    id="login-confirm-pass"
+                    tabIndex={isRegister ? 0 : -1}
+                  />
+                  <label htmlFor="login-confirm-pass" className="login-float-label">Confirm Password</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPass(v => !v)}
+                    className="login-eye-btn"
+                    tabIndex={-1}
+                  >
+                    {showConfirmPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Error message */}
             {error && (
               <p className="login-error">
-                Invalid credentials. Please try again.
+                {error}
               </p>
             )}
 
-            {/* Login Button */}
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
@@ -135,6 +290,11 @@ export default function LoginView() {
             >
               {loading ? (
                 <Loader2 size={22} className="animate-spin" />
+              ) : isRegister ? (
+                <>
+                  <UserPlus size={20} />
+                  <span>Register</span>
+                </>
               ) : (
                 <>
                   <LogIn size={20} />
@@ -143,6 +303,17 @@ export default function LoginView() {
               )}
             </button>
           </form>
+
+          {/* Toggle Login/Register */}
+          <div className="mt-5 text-center">
+            <button
+              type="button"
+              onClick={() => { setIsRegister(!isRegister); setError(false); }}
+              className="text-sm font-bold text-gray-500 hover:text-blue-600 transition-colors"
+            >
+              {isRegister ? 'Already have an account? Sign in' : "Don't have an account? Register"}
+            </button>
+          </div>
         </div>
 
         {/* ── Divider — stagger anim 4 ── */}

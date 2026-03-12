@@ -11,7 +11,7 @@ import BottomSheet from '../components/BottomSheet';
 import LocationSearchModal from '../components/commuter/LocationSearchModal';
 
 export default function CommuterView({ mapRef }) {
-  const { t, setView, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, setDestinationPin } = useApp();
+  const { t, setView, currentUser, setCurrentUser, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, setDestinationPin } = useApp();
   const [activeTab, setActiveTab] = useState('ride');
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState('');
@@ -102,10 +102,14 @@ export default function CommuterView({ mapRef }) {
   }
 
   function doLogout() {
+    setCurrentUser(null);
     setView('login');
     const sheet = document.getElementById('commuter-sheet');
     if (sheet) sheet.style.transform = 'translateY(0px)';
   }
+
+  const displayName = currentUser?.fullName || currentUser?.username || 'User';
+  const displayContact = currentUser?.email || 'No email available';
 
   const navItems = [
     { id: 'ride',    Icon: CarFront,      label: 'Ride' },
@@ -340,8 +344,8 @@ export default function CommuterView({ mapRef }) {
               <User size={32} className="text-gray-400" />
             </div>
             <div>
-              <h3 className="text-xl font-black text-gray-900 tracking-tight">Juan Dela Cruz</h3>
-              <p className="text-xs font-bold text-gray-500 mt-0.5">+63 912 345 6789</p>
+              <h3 className="text-xl font-black text-gray-900 tracking-tight">{displayName}</h3>
+              <p className="text-xs font-bold text-gray-500 mt-0.5">{displayContact}</p>
             </div>
           </div>
 

@@ -198,6 +198,62 @@
   80%  { transform: translateX(4px); }
 }
 
+/* ═══ Smooth Register Expansion ═══ */
+.login-expandable {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, margin 0.3s ease;
+  opacity: 0;
+  margin-bottom: 0;
+}
+
+.login-expandable.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: 20px; /* aligns with space-y-5 */
+}
+
+.login-expandable-inner {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 20px; /* equivalent to space-y-5 logic internally */
+}
+
+/* ═══ Password Strength ═══ */
+.password-strength-container {
+  margin-top: -8px;
+  margin-bottom: 2px;
+  padding: 0 4px;
+}
+.password-strength-bar-bg {
+  height: 6px;
+  width: 100%;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.password-strength-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+.password-hint {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 6px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+body.dark-mode .password-strength-bar-bg {
+  background: #374151;
+}
+body.dark-mode .password-hint {
+  color: #9ca3af;
+}
+
 /* ═══ Submit button ═══ */
 .login-submit-btn {
   width: 100%;

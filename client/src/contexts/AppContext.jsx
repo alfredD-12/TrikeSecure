@@ -7,6 +7,15 @@ export function AppProvider({ children }) {
   const [lang, setLang] = useState(() => localStorage.getItem('language') || 'en');
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'enabled');
   const [view, setView] = useState('login'); // 'login' | 'driver' | 'commuter'
+  const [currentUser, setCurrentUser] = useState(() => {
+    const raw = localStorage.getItem('currentUser');
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  });
   const [pinTarget, setPinTarget] = useState(null);       // null | 'from' | 'to'
   const [userPickup, setUserPickup] = useState(null);      // { lat, lng, label, fromGps? }
   const [destination, setDestination] = useState('');      // free-text going-to label
@@ -23,6 +32,14 @@ export function AppProvider({ children }) {
     localStorage.setItem('language', lang);
   }, [lang]);
 
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('currentUser');
+    }
+  }, [currentUser]);
+
   const toggleDarkMode = useCallback(() => setDarkMode(v => !v), []);
   const toggleLanguage = useCallback(() => setLang(v => (v === 'en' ? 'tl' : 'en')), []);
 
@@ -31,7 +48,7 @@ export function AppProvider({ children }) {
   }, [lang]);
 
   return (
-    <AppContext.Provider value={{ lang, darkMode, view, setView, toggleDarkMode, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin }}>
+    <AppContext.Provider value={{ lang, darkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin }}>
       {children}
     </AppContext.Provider>
   );
