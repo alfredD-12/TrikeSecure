@@ -52,6 +52,11 @@ if (clientOrigins.length === 0) {
   throw new Error('CLIENT_ORIGIN must contain at least one allowed origin.');
 }
 
+const dbPassword = requireEnv('DB_PASSWORD', { allowEmpty: true });
+if (isProduction && dbPassword.trim() === '') {
+  throw new Error('DB_PASSWORD cannot be empty in production.');
+}
+
 module.exports = {
   port: Number(process.env.PORT || 5000),
   nodeEnv: NODE_ENV,
@@ -65,7 +70,7 @@ module.exports = {
     host: requireEnv('DB_HOST'),
     port: dbPort,
     user: requireEnv('DB_USER'),
-    password: requireEnv('DB_PASSWORD', { allowEmpty: true }),
+    password: dbPassword,
     name: requireEnv('DB_NAME'),
   },
   session: {

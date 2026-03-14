@@ -30,7 +30,8 @@ source server/schema.sql
 
 ```bash
 cd server
-# Edit .env with your MySQL credentials
+# Copy env template and edit values
+cp .env.example .env
 npm run dev        # starts on http://localhost:5000
 ```
 
@@ -53,11 +54,9 @@ npm run dev        # starts on http://localhost:5173
 
 ## Environment Variables (`server/.env`)
 
-```
-PORT=5000
-SESSION_SECRET=your_secret_key_here
-DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=your_mysql_password
-DB_NAME=trikesecure
-```
+Use `server/.env.example` as your source of truth.
+
+Key fields:
+- `SESSION_SECRET` must be strong and unique
+- `CLIENT_ORIGIN` can be comma-separated for allowed frontend origins
+- `DB_NAME` should match your schema (`trikesec` by default)

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { translations } from '../utils/translations';
+import { getMe } from '../api';
 
 const AppContext = createContext(null);
 
@@ -39,6 +40,35 @@ export function AppProvider({ children }) {
       localStorage.removeItem('currentUser');
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function restoreSession() {
+      const me = await getMe();
+      if (!isMounted) return;
+
+      if (me?.userId) {
+        const resolvedRole = me.role === 'driver' ? 'driver' : 'commuter';
+        setCurrentUser({
+          username: me.username,
+          fullName: me.fullName || me.username,
+          email: me.email || '',
+          role: resolvedRole,
+        });
+        setView(resolvedRole);
+        return;
+      }
+
+      setCurrentUser(null);
+      setView('login');
+    }
+
+    restoreSession();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const toggleDarkMode = useCallback(() => setDarkMode(v => !v), []);
   const toggleLanguage = useCallback(() => setLang(v => (v === 'en' ? 'tl' : 'en')), []);

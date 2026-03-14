@@ -9,6 +9,7 @@ import Header from '../components/Header';
 import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
 import LocationSearchModal from '../components/commuter/LocationSearchModal';
+import { logout } from '../api';
 
 export default function CommuterView({ mapRef }) {
   const { t, setView, currentUser, setCurrentUser, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, setDestinationPin } = useApp();
@@ -101,7 +102,8 @@ export default function CommuterView({ mapRef }) {
     }
   }
 
-  function doLogout() {
+  async function doLogout() {
+    await logout();
     setCurrentUser(null);
     setView('login');
     const sheet = document.getElementById('commuter-sheet');

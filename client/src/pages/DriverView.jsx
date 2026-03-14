@@ -7,9 +7,10 @@ import { useApp } from '../contexts/AppContext';
 import Header from '../components/Header';
 import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
+import { logout } from '../api';
 
 export default function DriverView({ mapRef }) {
-  const { t, setView } = useApp();
+  const { t, setView, setCurrentUser } = useApp();
   const [activeTab, setActiveTab] = useState('home');
   const [dutyOn, setDutyOn] = useState(true);
 
@@ -22,7 +23,9 @@ export default function DriverView({ mapRef }) {
     }
   }
 
-  function doLogout() {
+  async function doLogout() {
+    await logout();
+    setCurrentUser(null);
     setView('login');
     const sheet = document.getElementById('driver-sheet');
     if (sheet) sheet.style.transform = 'translateY(0px)';
