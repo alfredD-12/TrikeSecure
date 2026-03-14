@@ -22,6 +22,21 @@ export function AppProvider({ children }) {
   const [destination, setDestination] = useState('');      // free-text going-to label
   const [destinationPin, setDestinationPin] = useState(null); // { lat, lng, label } from map tap
 
+  // Initialize dynamicDict from localStorage
+  const [dynamicDict, setDynamicDict] = useState(() => {
+    try {
+      const stored = localStorage.getItem('app_translations');
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Persist dynamicDict to localStorage
+  useEffect(() => {
+    localStorage.setItem('app_translations', JSON.stringify(dynamicDict));
+  }, [dynamicDict]);
+
   // Apply dark mode class to body
   useEffect(() => {
     document.body.classList.toggle('dark-mode', darkMode);
@@ -73,12 +88,47 @@ export function AppProvider({ children }) {
   const toggleDarkMode = useCallback(() => setDarkMode(v => !v), []);
   const toggleLanguage = useCallback(() => setLang(v => (v === 'en' ? 'tl' : 'en')), []);
 
-  const t = useCallback((key) => {
-    return translations[lang]?.[key] ?? key;
+  // Clear fetch tracker when language changes so translations re-fetch
+  useEffect(() => {
+    window._fetchingDict = {};
   }, [lang]);
 
+  const t = useCallback((text) => {
+    // 1. Fallback to existing translations.js static keys
+    if (translations[lang]?.[text]) return translations[lang][text];
+    
+    // 2. Base case: If English or empty
+    if (lang === 'en' || !text) return text;
+
+    // 3. Dynamic cache check
+    const cacheKey = `${lang}_${text}`;
+    if (dynamicDict[cacheKey]) return dynamicDict[cacheKey];
+
+    // 4. Auto-fetch from Google Translate API
+    if (!window._fetchingDict) window._fetchingDict = {};
+    if (!window._fetchingDict[cacheKey] && typeof text === 'string') {
+      window._fetchingDict[cacheKey] = true;
+      
+      fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data[0]) {
+            const translated = data[0].map(x => x[0]).join('');
+            setDynamicDict(prev => ({ ...prev, [cacheKey]: translated }));
+          }
+        })
+        .catch(err => {
+          console.error('Translation error:', err);
+          window._fetchingDict[cacheKey] = false;
+        });
+    }
+
+    // 5. Return original text temporarily while fetching
+    return text;
+  }, [lang, dynamicDict]);
+
   return (
-    <AppContext.Provider value={{ lang, darkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin }}>
+    <AppContext.Provider value={{ lang, darkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, dynamicDict, setDynamicDict }}>
       {children}
     </AppContext.Provider>
   );

@@ -58,13 +58,15 @@ function MapClickHandler() {
       const { lat, lng } = e.latlng;
       let label;
       try {
+        const apiKey = import.meta.env.VITE_GEOAPIFY_REVERSE_KEY;
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
-          { headers: { 'Accept-Language': 'en' } }
+          `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&lang=en&apiKey=${apiKey}`
         );
         const data = await res.json();
-        const parts = data.display_name?.split(',') ?? [];
-        label = parts.slice(0, 3).join(',').trim() || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+        const props = data.features?.[0]?.properties;
+        label = props?.formatted
+          ? props.formatted.split(',').slice(0, 3).join(',').trim()
+          : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
       } catch {
         label = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
       }
@@ -182,7 +184,6 @@ function UserLocationDot() {
   const map = useMap();
   const [pos, setPos] = useState(null); // { lat, lng, accuracy }
   const markerRef = useRef(null);
-  const circleRef = useRef(null);
   const watchIdRef = useRef(null);
 
   useEffect(() => {
@@ -204,23 +205,13 @@ function UserLocationDot() {
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
-        const { latitude: lat, longitude: lng, accuracy } = position.coords;
-        setPos({ lat, lng, accuracy });
+        const { latitude: lat, longitude: lng } = position.coords;
+        setPos({ lat, lng });
 
         if (!markerRef.current) {
           markerRef.current = L.marker([lat, lng], { icon: dotIcon, zIndexOffset: 1000, interactive: false }).addTo(map);
-          circleRef.current = L.circle([lat, lng], {
-            radius: accuracy,
-            color: '#2563eb',
-            fillColor: '#2563eb',
-            fillOpacity: 0.1,
-            weight: 1,
-            interactive: false,
-          }).addTo(map);
         } else {
           markerRef.current.setLatLng([lat, lng]);
-          circleRef.current.setLatLng([lat, lng]);
-          circleRef.current.setRadius(accuracy);
         }
       },
       null,
@@ -230,7 +221,6 @@ function UserLocationDot() {
     return () => {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
       if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
-      if (circleRef.current) { circleRef.current.remove(); circleRef.current = null; }
     };
   }, [view, map]);
 
@@ -310,25 +300,17 @@ export default function MapBackground({ mapRef }) {
             </Popup>
           </Marker>
         )}
-        {/* User pickup marker — only shown when a pickup is set */}
-        {userPickup && (
-          <>
-            <Marker position={[userPickup.lat, userPickup.lng]} icon={pickupIcon}>
-              <Popup>
-                <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '160px' }}>
-                  <div style={{ fontWeight: 700, color: '#1f2937', fontSize: '13px', marginBottom: '2px' }}>📍 Your Pickup</div>
-                  <div style={{ color: '#6b7280', fontSize: '12px' }}>{userPickup.label}</div>
-                </div>
-              </Popup>
-            </Marker>
-            {userPickup.fromGps && (
-              <Circle
-                center={[userPickup.lat, userPickup.lng]}
-                radius={userPickup.accuracy || 30}
-                pathOptions={{ color: '#2563eb', fillColor: '#2563eb', fillOpacity: 0.12, weight: 1.5 }}
-              />
-            )}
-          </>
+        {/* User pickup marker — only shown when pickup is set AND was NOT from GPS
+           (GPS pickups are already visualized by the live UserLocationDot blue dot) */}
+        {userPickup && !userPickup.fromGps && (
+          <Marker position={[userPickup.lat, userPickup.lng]} icon={pickupIcon}>
+            <Popup>
+              <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '160px' }}>
+                <div style={{ fontWeight: 700, color: '#1f2937', fontSize: '13px', marginBottom: '2px' }}>📍 Your Pickup</div>
+                <div style={{ color: '#6b7280', fontSize: '12px' }}>{userPickup.label}</div>
+              </div>
+            </Popup>
+          </Marker>
         )}
         {/* Trike terminal marker — only shown in driver view */}
         {!isCommuter && (

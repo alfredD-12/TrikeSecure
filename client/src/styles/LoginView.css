@@ -79,24 +79,6 @@
   z-index: 20;
 }
 
-/* ═══ Logo glow pulse ═══ */
-.login-logo-glow {
-  position: relative;
-}
-
-.login-logo-glow::after {
-  content: '';
-  position: absolute;
-  inset: -10px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(239, 68, 68, 0.18) 0%, transparent 70%);
-  animation: logo-pulse 3s ease-in-out infinite;
-}
-
-@keyframes logo-pulse {
-  0%, 100% { transform: scale(0.95); opacity: 0.6; }
-  50%      { transform: scale(1.1);  opacity: 1; }
-}
 
 /* ═══ Glass card ═══ */
 .login-glass-card {
