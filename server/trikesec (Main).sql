@@ -21,6 +21,19 @@ SET time_zone = "+00:00";
 -- Database: `trikesec`
 --
 
+CREATE DATABASE IF NOT EXISTS `trikesec`;
+USE `trikesec`;
+
+SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS `complaints`;
+DROP TABLE IF EXISTS `franchises`;
+DROP TABLE IF EXISTS `ride_requests`;
+DROP TABLE IF EXISTS `tricycles`;
+DROP TABLE IF EXISTS `drivers`;
+DROP TABLE IF EXISTS `user_sessions`;
+DROP TABLE IF EXISTS `users`;
+SET FOREIGN_KEY_CHECKS = 1;
+
 -- --------------------------------------------------------
 
 --
@@ -48,6 +61,7 @@ CREATE TABLE `drivers` (
   `user_id` int NOT NULL,
   `license_number` varchar(50) NOT NULL,
   `contact_number` varchar(20) DEFAULT NULL,
+  `picture` varchar(255) DEFAULT NULL,
   `toda_name` varchar(100) DEFAULT NULL,
   `status` enum('active','suspended','expired') DEFAULT 'active'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -61,6 +75,7 @@ CREATE TABLE `drivers` (
 CREATE TABLE `franchises` (
   `franchise_id` int NOT NULL,
   `tricycle_id` int NOT NULL,
+  `driver_id` int NOT NULL,
   `issue_date` date NOT NULL,
   `expiry_date` date NOT NULL,
   `lgu_reference_no` varchar(100) DEFAULT NULL
@@ -75,6 +90,7 @@ CREATE TABLE `franchises` (
 CREATE TABLE `ride_requests` (
   `request_id` int NOT NULL,
   `pickup_location` varchar(255) NOT NULL,
+  `dropoff_location` varchar(255) DEFAULT NULL,
   `request_time` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `assigned_driver_id` int DEFAULT NULL,
   `status` enum('waiting','accepted','completed','cancelled') DEFAULT 'waiting'
@@ -151,7 +167,8 @@ ALTER TABLE `drivers`
 --
 ALTER TABLE `franchises`
   ADD PRIMARY KEY (`franchise_id`),
-  ADD KEY `tricycle_id` (`tricycle_id`);
+  ADD KEY `tricycle_id` (`tricycle_id`),
+  ADD KEY `driver_id` (`driver_id`);
 
 --
 -- Indexes for table `ride_requests`
@@ -244,7 +261,8 @@ ALTER TABLE `drivers`
 -- Constraints for table `franchises`
 --
 ALTER TABLE `franchises`
-  ADD CONSTRAINT `franchises_ibfk_1` FOREIGN KEY (`tricycle_id`) REFERENCES `tricycles` (`tricycle_id`) ON DELETE CASCADE;
+  ADD CONSTRAINT `franchises_ibfk_1` FOREIGN KEY (`tricycle_id`) REFERENCES `tricycles` (`tricycle_id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `franchises_ibfk_2` FOREIGN KEY (`driver_id`) REFERENCES `drivers` (`driver_id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `ride_requests`

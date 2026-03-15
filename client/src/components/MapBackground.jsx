@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { useApp } from '../contexts/AppContext';
@@ -40,6 +40,20 @@ function MapController({ mapRef }) {
   return null;
 }
 
+// Tracks whether the map is currently being dragged/panned
+function MapMovementHandler() {
+  const { setIsMapMoving, pinTarget } = useApp();
+  useMapEvents({
+    movestart: () => {
+      if (pinTarget === 'to') setIsMapMoving(true);
+    },
+    moveend: () => {
+      setIsMapMoving(false);
+    }
+  });
+  return null;
+}
+
 // Handles map clicks when pick mode is active
 function MapClickHandler() {
   const { view, pinTarget, setPinTarget, setUserPickup, setDestination, setDestinationPin } = useApp();
@@ -54,7 +68,9 @@ function MapClickHandler() {
         }
       }
 
-      if (!pinTarget) return;
+      // 'to' destination is now handled by center-pin confirm, not click
+      if (!pinTarget || pinTarget === 'to') return;
+
       const { lat, lng } = e.latlng;
       let label;
       try {
@@ -72,31 +88,29 @@ function MapClickHandler() {
       }
       if (pinTarget === 'from') {
         setUserPickup({ lat, lng, label });
-      } else if (pinTarget === 'to') {
-        setDestination(label);
-        setDestinationPin({ lat, lng, label });
+        setPinTarget(null);
       }
-      setPinTarget(null);
     },
   });
   return null;
 }
 
+
 // Red destination drop-pin icon
 const destIconHtml = `
-  <div style="position:relative;width:32px;height:42px;">
-    <svg width="32" height="42" viewBox="0 0 32 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M16 2C9.37 2 4 7.37 4 14c0 9.25 12 26 12 26s12-16.75 12-26c0-6.63-5.37-12-12-12z" fill="#dc2626" stroke="white" stroke-width="2"/>
-      <circle cx="16" cy="14" r="5" fill="white"/>
+  <div style="display: flex; align-items: center; justify-content: center;">
+    <svg width="54" height="66" viewBox="-4 -4 40 46" fill="none" xmlns="http://www.w3.org/2000/svg" class="v-pin-svg">
+      <path d="M16 2C9.37 2 4 7.37 4 14c0 9.25 12 26 12 26s12-16.75 12-26c0-6.63-5.37-12-12-12z" fill="#ef4444" class="v-pin-path" stroke-width="4"/>
+      <circle cx="16" cy="14" r="5.5" fill="white"/>
     </svg>
   </div>`;
 
 const destIcon = L.divIcon({
   className: '',
   html: destIconHtml,
-  iconSize: [32, 42],
-  iconAnchor: [16, 42],
-  popupAnchor: [0, -44],
+  iconSize: [54, 66],
+  iconAnchor: [27, 66], // Tip is horizontally centered and vertically at the bottom of the bounding box
+  popupAnchor: [0, -66],
 });
 
 // Draws OSRM road route between pickup and destination
@@ -180,9 +194,8 @@ function DarkAwareTileLayer({ darkMode }) {
 
 // Google Maps-style real-time blue dot for commuter
 function UserLocationDot() {
-  const { view } = useApp();
+  const { view, setLiveLocation } = useApp();
   const map = useMap();
-  const [pos, setPos] = useState(null); // { lat, lng, accuracy }
   const markerRef = useRef(null);
   const watchIdRef = useRef(null);
 
@@ -205,8 +218,9 @@ function UserLocationDot() {
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
-        const { latitude: lat, longitude: lng } = position.coords;
-        setPos({ lat, lng });
+        const { latitude: lat, longitude: lng, accuracy } = position.coords;
+        // Publish to context so CommuterView GPS button can read it instantly
+        setLiveLocation({ lat, lng, accuracy });
 
         if (!markerRef.current) {
           markerRef.current = L.marker([lat, lng], { icon: dotIcon, zIndexOffset: 1000, interactive: false }).addTo(map);
@@ -215,7 +229,7 @@ function UserLocationDot() {
         }
       },
       null,
-      { enableHighAccuracy: true, maximumAge: 3000 }
+      { enableHighAccuracy: true, maximumAge: 3000, timeout: 30000 }
     );
 
     return () => {
@@ -283,6 +297,7 @@ export default function MapBackground({ mapRef }) {
         style={{ width: '100%', height: '100%' }}
       >
         <MapController mapRef={mapRef} />
+        <MapMovementHandler />
         <MapClickHandler />
         <FlyToPoint />
         <RouteLayer />

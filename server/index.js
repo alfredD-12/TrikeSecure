@@ -7,6 +7,8 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 
 const authRoutes = require('./routes/auth');
+const scanRoutes = require('./routes/scan');
+const ridesRoutes = require('./routes/rides');
 
 const app = express();
 const MySQLStore = MySQLStoreFactory(session);
@@ -82,6 +84,8 @@ app.use(session({
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/scan', scanRoutes);
+app.use('/api/rides', ridesRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

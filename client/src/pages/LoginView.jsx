@@ -84,22 +84,31 @@ export default function LoginView() {
 
       setLoading(true);
 
-      const normalizedEmail = email.trim().toLowerCase();
-      const baseUsername = normalizedEmail.split('@')[0]?.replace(/[^a-zA-Z0-9_]/g, '') || 'user';
-      const username = baseUsername.slice(0, 30);
-      const data = await register(fullName.trim(), username, normalizedEmail, pass);
+      try {
+        const normalizedEmail = email.trim().toLowerCase();
+        const baseUsername = normalizedEmail.split('@')[0]?.replace(/[^a-zA-Z0-9_]/g, '') || 'user';
+        const username = baseUsername.slice(0, 30);
+        const data = await register(fullName.trim(), username, normalizedEmail, pass);
 
-      setLoading(false);
-      if (data.message === 'User registered successfully.') {
-        setIsRegister(false);
-        setPass('');
-        setConfirmPass('');
-        clearErrors();
-        setStatusMessage('Account created successfully. Please sign in.');
-        return;
+        if (data.message === 'User registered successfully.') {
+          setIsRegister(false);
+          setPass('');
+          setConfirmPass('');
+          clearErrors();
+          setStatusMessage('Account created successfully. Please sign in.');
+          return;
+        }
+
+        setFieldErrors((prev) => ({ ...prev, form: data.message || 'Registration failed.' }));
+      } catch {
+        setFieldErrors((prev) => ({
+          ...prev,
+          form: 'Unable to reach the server. Check your network and API URL.',
+        }));
+      } finally {
+        setLoading(false);
       }
 
-      setFieldErrors((prev) => ({ ...prev, form: data.message || 'Registration failed.' }));
       return;
     }
 
@@ -121,22 +130,30 @@ export default function LoginView() {
 
     setLoading(true);
 
-    const data = await login(email.trim().toLowerCase(), pass);
+    try {
+      const data = await login(email.trim().toLowerCase(), pass);
 
-    setLoading(false);
-    if (data.message === 'Login successful.') {
-      const resolvedRole = data.role === 'driver' ? 'driver' : 'commuter';
-      setCurrentUser({
-        username: data.username,
-        fullName: data.fullName || data.username,
-        email: data.email || email.trim().toLowerCase(),
-        role: resolvedRole,
-      });
-      setView(resolvedRole);
-      return;
+      if (data.message === 'Login successful.') {
+        const resolvedRole = data.role === 'driver' ? 'driver' : 'commuter';
+        setCurrentUser({
+          username: data.username,
+          fullName: data.fullName || data.username,
+          email: data.email || email.trim().toLowerCase(),
+          role: resolvedRole,
+        });
+        setView(resolvedRole);
+        return;
+      }
+
+      setFieldErrors((prev) => ({ ...prev, form: data.message || 'Invalid credentials. Please try again.' }));
+    } catch {
+      setFieldErrors((prev) => ({
+        ...prev,
+        form: 'Unable to reach the server. Check your network and API URL.',
+      }));
+    } finally {
+      setLoading(false);
     }
-
-    setFieldErrors((prev) => ({ ...prev, form: data.message || 'Invalid credentials. Please try again.' }));
   }
 
   function socialLogin() {

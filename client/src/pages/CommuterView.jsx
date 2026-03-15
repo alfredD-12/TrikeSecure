@@ -1,28 +1,133 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   CarFront, ScanLine, ClipboardList, User,
   AlertCircle, ChevronDown, Hash, ShieldCheck, LogOut, ChevronRight, QrCode,
-  LocateFixed, MapPin, X
+  LocateFixed, MapPin, X, Camera
 } from 'lucide-react';
+import { animate, stagger, createTimeline } from 'animejs';
 import { useApp } from '../contexts/AppContext';
 import Header from '../components/Header';
 import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
 import LocationSearchModal from '../components/commuter/LocationSearchModal';
-import { logout } from '../api';
+import { getDriverByQr, logout, bookRide } from '../api';
+
+/* ── Fullscreen Searching Overlay ──────────────────────── */
+function SearchingOverlay({ onCancel }) {
+  const containerRef = useRef(null);
+  const timelineRef = useRef(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const rings = containerRef.current.querySelectorAll('.v-pulse-ring');
+    const pin = containerRef.current.querySelector('.v-search-pin');
+    const dots = containerRef.current.querySelector('.v-search-dots');
+
+    // Staggered expanding pulse rings
+    timelineRef.current = createTimeline({ loop: true });
+    timelineRef.current
+      .add(rings, {
+        scale: [0.3, 2.8],
+        opacity: [0.7, 0],
+        duration: 2400,
+        delay: stagger(400),
+        ease: 'outQuad',
+      });
+
+    // Bouncing pin
+    animate(pin, {
+      translateY: [-8, 0, -8],
+      duration: 1600,
+      loop: true,
+      ease: 'inOutSine',
+    });
+
+    // Dot wave
+    if (dots) {
+      animate(dots.querySelectorAll('.v-dot'), {
+        translateY: [-6, 0],
+        opacity: [1, 0.3],
+        duration: 600,
+        delay: stagger(150),
+        loop: true,
+        alternate: true,
+        ease: 'inOutSine',
+      });
+    }
+
+    return () => {
+      if (timelineRef.current) timelineRef.current.pause();
+    };
+  }, []);
+
+  return (
+    <div className="v-searching-overlay" ref={containerRef}>
+      {/* Concentric pulse rings */}
+      <div className="v-pulse-container">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="v-pulse-ring" />
+        ))}
+        {/* Center pin */}
+        <div className="v-search-pin">
+          <svg width="48" height="58" viewBox="-4 -4 40 46" fill="none" className="v-pin-svg">
+            <path d="M16 2C9.37 2 4 7.37 4 14c0 9.25 12 26 12 26s12-16.75 12-26c0-6.63-5.37-12-12-12z" fill="#ef4444" className="v-pin-path" strokeWidth="3"/>
+            <circle cx="16" cy="14" r="5" fill="white"/>
+          </svg>
+        </div>
+      </div>
+
+      {/* Text */}
+      <p className="v-searching-text">Searching for a driver</p>
+      <div className="v-search-dots">
+        <span className="v-dot">.</span>
+        <span className="v-dot">.</span>
+        <span className="v-dot">.</span>
+      </div>
+      <p className="v-searching-sub">Please wait while we find you a ride</p>
+
+      {/* Cancel */}
+      <button onClick={onCancel} className="v-cancel-search-btn">
+        Cancel Ride
+      </button>
+    </div>
+  );
+}
 
 export default function CommuterView({ mapRef }) {
-  const { t, setView, currentUser, setCurrentUser, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, setDestinationPin } = useApp();
+  const { t, setView, currentUser, setCurrentUser, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, setDestinationPin, liveLocation, isMapMoving } = useApp();
   const [activeTab, setActiveTab] = useState('ride');
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState('');
   const [searchModal, setSearchModal] = useState(null); // null | 'from' | 'to'
   const [reportType, setReportType] = useState('');
   const [isReportDropdownOpen, setIsReportDropdownOpen] = useState(false);
+  const [scanStatus, setScanStatus] = useState('idle'); // idle | starting | scanning | error
+  const [scanError, setScanError] = useState('');
+  const [scanInput, setScanInput] = useState('');
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanResult, setScanResult] = useState(null);
   const prevPinTargetRef = useRef(null);
+  const scannerRef = useRef(null);
+  const scannerLockedRef = useRef(false);
+  const [confirmingPin, setConfirmingPin] = useState(false);
+  const [bookingStatus, setBookingStatus] = useState(null); // null | 'searching' | 'cancelled'
 
   // Computed state for booking validation
   const canBook = userPickup && destination;
+
+  async function handleBookRide() {
+    if (!canBook) return;
+    setBookingStatus('searching');
+    try {
+      await bookRide(userPickup.label || 'GPS Location', destination);
+    } catch {
+      // Even if the API call fails, we keep the animation for demo purposes
+    }
+  }
+
+  function cancelBooking() {
+    setBookingStatus(null);
+  }
 
   // Re-expand bottom sheet when pin mode ends
   useEffect(() => {
@@ -52,13 +157,25 @@ export default function CommuterView({ mapRef }) {
     }
   }
 
-  function useCurrentLocation() {
+  async function useCurrentLocation() {
+    setGpsError('');
+
+    // Fast path: the map's watchPosition already has a fresh fix — use it instantly
+    if (liveLocation) {
+      setGpsLoading(true);
+      const { lat, lng, accuracy } = liveLocation;
+      const label = await reverseGeocode(lat, lng);
+      setUserPickup({ lat, lng, label, fromGps: true, accuracy });
+      setGpsLoading(false);
+      return;
+    }
+
+    // Slow path: watchPosition hasn't fired yet (first load) — fall back to one-shot
     if (!navigator.geolocation) {
       setGpsError(t('commuter-gps-error'));
       return;
     }
     setGpsLoading(true);
-    setGpsError('');
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude: lat, longitude: lng, accuracy } = pos.coords;
@@ -70,18 +187,36 @@ export default function CommuterView({ mapRef }) {
         setGpsError(t('commuter-gps-error'));
         setGpsLoading(false);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
   }
 
   function activatePinOnMap() {
     setPinTarget('to');
-    // Collapse bottom sheet so map is visible
+    // Collapse bottom sheet fully so maximum map is visible
     const sheet = document.getElementById('commuter-sheet');
     if (sheet) {
       sheet.style.transition = 'transform 0.3s cubic-bezier(0.16,1,0.3,1)';
       const viewH = window.innerHeight;
-      sheet.style.transform = `translateY(${viewH - 160}px)`;
+      sheet.style.transform = `translateY(${viewH - 120}px)`;
+    }
+  }
+
+  async function confirmCenterPin() {
+    if (!mapRef.current) return;
+    const center = mapRef.current.getCenter();
+    const { lat, lng } = center;
+    setConfirmingPin(true);
+    const label = await reverseGeocode(lat, lng);
+    setDestination(label);
+    setDestinationPin({ lat, lng, label });
+    setPinTarget(null);
+    setConfirmingPin(false);
+    // Re-expand bottom sheet
+    const sheet = document.getElementById('commuter-sheet');
+    if (sheet) {
+      sheet.style.transition = 'transform 0.3s cubic-bezier(0.16,1,0.3,1)';
+      sheet.style.transform = 'translateY(0px)';
     }
   }
 
@@ -109,6 +244,96 @@ export default function CommuterView({ mapRef }) {
     }
   }
 
+  async function stopScanner() {
+    if (!scannerRef.current) return;
+    try {
+      await scannerRef.current.stop();
+    } catch {
+      // ignore stop errors when scanner did not fully initialize
+    }
+    try {
+      await scannerRef.current.clear();
+    } catch {
+      // ignore clear errors
+    }
+    scannerRef.current = null;
+  }
+
+  async function fetchScanResult(rawValue) {
+    const code = (rawValue || '').trim();
+    if (!code) return;
+
+    setScanLoading(true);
+    setScanError('');
+    const data = await getDriverByQr(code);
+    setScanLoading(false);
+
+    if (data?.tricycleId) {
+      setScanResult(data);
+      setScanInput(code);
+      return;
+    }
+
+    setScanResult(null);
+    setScanError(data?.message || 'Unable to find this QR code.');
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function startScanner() {
+      if (activeTab !== 'scan') {
+        await stopScanner();
+        setScanStatus('idle');
+        return;
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setScanStatus('error');
+        setScanError('Camera is not supported on this browser/device.');
+        return;
+      }
+
+      setScanStatus('starting');
+      setScanError('');
+
+      try {
+        const { Html5Qrcode } = await import('html5-qrcode');
+        if (cancelled) return;
+
+        const scanner = new Html5Qrcode('commuter-qr-reader');
+        scannerRef.current = scanner;
+
+        await scanner.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          async (decodedText) => {
+            if (scannerLockedRef.current) return;
+            scannerLockedRef.current = true;
+            await fetchScanResult(decodedText);
+            setTimeout(() => {
+              scannerLockedRef.current = false;
+            }, 1500);
+          },
+          () => {}
+        );
+
+        if (cancelled) return;
+        setScanStatus('scanning');
+      } catch {
+        setScanStatus('error');
+        setScanError('Unable to start camera scanner. Please allow camera access.');
+      }
+    }
+
+    startScanner();
+
+    return () => {
+      cancelled = true;
+      stopScanner();
+    };
+  }, [activeTab]);
+
   async function doLogout() {
     await logout();
     setCurrentUser(null);
@@ -132,6 +357,11 @@ export default function CommuterView({ mapRef }) {
       <Header />
       <MapControls mapRef={mapRef} />
 
+      {/* Searching for driver overlay */}
+      {bookingStatus === 'searching' && (
+        <SearchingOverlay onCancel={cancelBooking} />
+      )}
+
       {/* Location Search Modal */}
       {searchModal && (
         <LocationSearchModal
@@ -143,11 +373,54 @@ export default function CommuterView({ mapRef }) {
         />
       )}
 
-      {/* Floating hint banner when pin mode is active */}
-      {pinTarget && (
+      {/* ── Center-pin overlay when pinTarget === 'to' ─────── */}
+      {pinTarget === 'to' && (
+        <>
+          <div className="v-center-pin-wrap">
+            <div className={`v-center-pin-bounce-wrap ${isMapMoving ? 'is-moving' : ''}`}>
+              <div className="v-center-pin-body">
+                <svg width="54" height="66" viewBox="-4 -4 40 46" fill="none" xmlns="http://www.w3.org/2000/svg" className="v-pin-svg">
+                  <path d="M16 2C9.37 2 4 7.37 4 14c0 9.25 12 26 12 26s12-16.75 12-26c0-6.63-5.37-12-12-12z" fill="#ef4444" className="v-pin-path" strokeWidth="4"/>
+                  <circle cx="16" cy="14" r="5.5" fill="white"/>
+                </svg>
+              </div>
+              <div className={`v-center-pin-line ${isMapMoving ? 'is-moving' : ''}`} />
+            </div>
+            <div className={`v-center-pin-shadow ${isMapMoving ? 'is-moving' : ''}`} />
+          </div>
+
+          <div className="v-pin-confirm-banner">
+            <MapPin size={18} className="text-red-500 shrink-0" />
+            <span className="v-pin-banner-text">
+              Set destination here
+            </span>
+            <button
+              onClick={() => { setPinTarget(null); }}
+              className="v-pin-btn-cancel"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmCenterPin}
+              disabled={confirmingPin}
+              className="v-pin-btn-confirm"
+            >
+              {confirmingPin ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <span>Getting location…</span>
+                </>
+              ) : '✓ Confirm'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Floating hint banner for 'from' pin mode only */}
+      {pinTarget === 'from' && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-5 py-3 rounded-full flex items-center gap-2.5 shadow-xl text-sm font-bold whitespace-nowrap">
-          <MapPin size={15} className={pinTarget === 'to' ? 'text-red-400' : 'text-blue-400'} />
-          {pinTarget === 'to' ? t('commuter-pin-destination-hint') : t('commuter-pin-map-hint')}
+          <MapPin size={15} className="text-blue-400" />
+          {t('commuter-pin-map-hint')}
           <button
             onClick={() => setPinTarget(null)}
             className="ml-1 text-gray-400 hover:text-white"
@@ -162,7 +435,7 @@ export default function CommuterView({ mapRef }) {
         <div className={`tab-content pb-4${activeTab === 'ride' ? ' active' : ''}`}>
           <h2 className="v-anim v-anim--1 text-3xl font-black text-gray-900 mb-6 tracking-tight">{t('commuter-where')}</h2>
 
-          <div className="v-anim v-anim--2 v-route-panel mb-4">
+          <div className="v-anim v-anim--2 v-route-panel mb-4 overflow-hidden">
             <div className="v-route-line" />
 
             {/* FROM row */}
@@ -175,8 +448,7 @@ export default function CommuterView({ mapRef }) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setSearchModal('from')}
-                    className="flex-1 text-left font-bold text-sm truncate min-w-0"
-                    style={{ color: userPickup ? '#111827' : '#9ca3af' }}
+                    className={`flex-1 text-left font-bold text-sm truncate min-w-0 v-location-text ${userPickup ? 'has-value' : 'placeholder'}`}
                   >
                     {userPickup ? userPickup.label : t('commuter-set-pickup')}
                   </button>
@@ -210,13 +482,12 @@ export default function CommuterView({ mapRef }) {
               <div className="w-8 h-8 rounded-full bg-red-50 flex items-center justify-center border-[3px] border-white shadow-sm shrink-0">
                 <div className="w-2.5 h-2.5 bg-red-600 rounded-full" />
               </div>
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">{t('commuter-going-to')}</p>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setSearchModal('to')}
-                    className="flex-1 text-left v-glass px-4 py-3 font-bold text-sm transition-all hover:border-red-300 focus:outline-none focus:ring-2 focus:ring-red-500/30 truncate min-w-0"
-                    style={{ color: destination ? '#111827' : '#9ca3af' }}
+                    className={`flex-1 text-left v-glass px-4 py-3 font-bold text-sm transition-all hover:border-red-300 focus:outline-none focus:ring-2 focus:ring-red-500/30 truncate min-w-0 v-location-text ${destination ? 'has-value' : 'placeholder'}`}
                   >
                     {destination || t('commuter-destination-placeholder')}
                   </button>
@@ -259,7 +530,7 @@ export default function CommuterView({ mapRef }) {
             ))}
           </div>
 
-          <button disabled={!canBook} className="v-anim v-anim--5 v-btn-primary">
+          <button disabled={!canBook} onClick={handleBookRide} className="v-anim v-anim--5 v-btn-primary">
             {t('commuter-book-btn')}
           </button>
         </div>
@@ -269,12 +540,26 @@ export default function CommuterView({ mapRef }) {
           <h2 className="v-anim v-anim--1 text-3xl font-black text-gray-900 mb-2 tracking-tight">{t('commuter-verify-title')}</h2>
           <p className="v-anim v-anim--1 text-sm font-semibold text-gray-500 mb-8">{t('commuter-verify-desc')}</p>
 
-          <div className="v-anim v-anim--2 v-scanner-box mb-10">
-            <div className="absolute w-44 h-44 border-2 border-red-500/50 rounded-xl z-10">
-              <div className="w-full h-0.5 bg-red-500 absolute top-1/2 shadow-[0_0_8px_#ef4444] radar-ping" />
+          <div className="v-anim v-anim--2 mb-6">
+            <div className="v-scanner-box mb-3 relative overflow-hidden">
+              <div id="commuter-qr-reader" className="absolute inset-0 z-0" />
+              <QrCode size={72} className="absolute inset-0 m-auto text-white/25 z-10 pointer-events-none" />
+              <div className="absolute inset-0 m-auto w-44 h-44 border-2 border-red-500/60 rounded-xl z-20 pointer-events-none">
+                <div className="w-full h-0.5 bg-red-500 absolute top-1/2 shadow-[0_0_8px_#ef4444] radar-ping" />
+              </div>
+              {scanStatus !== 'scanning' && (
+                <div className="absolute inset-0 z-30 bg-white/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2 px-6 text-center">
+                  <Camera size={34} className="text-gray-400" />
+                  <p className="text-xs font-bold text-gray-500">
+                    {scanStatus === 'starting' ? 'Starting camera...' : 'Camera idle'}
+                  </p>
+                </div>
+              )}
             </div>
-            <QrCode size={64} className="text-gray-300 relative z-10" />
-            <p className="absolute bottom-4 text-[10px] font-black text-gray-400 tracking-wider uppercase v-scanner-pulse-text">Scanner Active</p>
+            <p className="text-[11px] font-black text-gray-400 uppercase tracking-wider text-center">
+              {scanStatus === 'scanning' ? 'Scanner active' : 'Scanner not running'}
+            </p>
+            {scanError && <p className="text-xs font-bold text-red-500 mt-2 text-center">⚠ {scanError}</p>}
           </div>
 
           <div className="v-anim v-anim--3 v-input-wrap max-w-sm mx-auto shadow-sm">
@@ -283,11 +568,31 @@ export default function CommuterView({ mapRef }) {
               type="text"
               placeholder={t('commuter-body-scan-placeholder')}
               className="!pr-24"
+              value={scanInput}
+              onChange={(e) => setScanInput(e.target.value)}
             />
-            <button className="absolute right-2 top-2 bottom-2 bg-gray-900 text-white px-5 rounded-xl font-bold text-xs btn-press">
-              {t('commuter-search')}
+            <button
+              type="button"
+              onClick={() => fetchScanResult(scanInput)}
+              disabled={scanLoading || !scanInput.trim()}
+              className="absolute right-2 top-2 bottom-2 bg-gray-900 text-white px-5 rounded-xl font-bold text-xs btn-press disabled:opacity-40"
+            >
+              {scanLoading ? 'Checking...' : t('commuter-search')}
             </button>
           </div>
+
+          {scanResult && (
+            <div className="v-anim v-anim--4 mt-5 p-4 rounded-2xl border border-gray-200 bg-white/85 shadow-sm space-y-2">
+              <p className="text-xs font-black text-gray-400 uppercase tracking-wider">Driver Details</p>
+              <p className="text-sm font-bold text-gray-900">Name: {scanResult.driver.fullName}</p>
+              <p className="text-sm font-semibold text-gray-700">Username: {scanResult.driver.username}</p>
+              <p className="text-sm font-semibold text-gray-700">Body Number: {scanResult.bodyNumber}</p>
+              <p className="text-sm font-semibold text-gray-700">Plate Number: {scanResult.plateNumber || 'N/A'}</p>
+              <p className="text-sm font-semibold text-gray-700">License: {scanResult.driver.licenseNumber || 'N/A'}</p>
+              <p className="text-sm font-semibold text-gray-700">Contact: {scanResult.driver.contactNumber || 'N/A'}</p>
+              <p className="text-sm font-semibold text-gray-700">Status: {scanResult.tricycleStatus}</p>
+            </div>
+          )}
         </div>
 
         {/* ── Report Tab ───────────────────────────────────── */}

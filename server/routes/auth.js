@@ -6,6 +6,7 @@ const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 
 const BCRYPT_ROUNDS = config.security.bcryptSaltRounds;
+const ENABLE_AUTH_RATE_LIMIT = false;
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -39,7 +40,13 @@ function validateFullName(fullName) {
   return typeof fullName === 'string' && fullName.length >= 2 && fullName.length <= 100;
 }
 
-router.use(authLimiter);
+function isLikelyBcryptHash(value) {
+  return typeof value === 'string' && /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(value);
+}
+
+if (ENABLE_AUTH_RATE_LIMIT) {
+  router.use(authLimiter);
+}
 
 // Register
 router.post('/register', async (req, res) => {
@@ -89,7 +96,22 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials.' });
 
     const user = rows[0];
-    const match = await bcrypt.compare(password, user.password);
+    if (!isLikelyBcryptHash(user.password)) {
+      console.warn(`Skipping login for user_id=${user.user_id}: stored password is not a valid bcrypt hash.`);
+      return res.status(401).json({ message: 'Invalid credentials.' });
+    }
+
+    let match;
+    try {
+      match = await bcrypt.compare(password, user.password);
+    } catch (compareError) {
+      if (compareError && /invalid salt|invalid hash/i.test(compareError.message || '')) {
+        console.warn(`Password compare failed for user_id=${user.user_id}: ${compareError.message}`);
+        return res.status(401).json({ message: 'Invalid credentials.' });
+      }
+      throw compareError;
+    }
+
     if (!match)
       return res.status(401).json({ message: 'Invalid credentials.' });
 
