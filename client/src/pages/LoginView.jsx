@@ -88,7 +88,7 @@ export default function LoginView() {
         const normalizedEmail = email.trim().toLowerCase();
         const baseUsername = normalizedEmail.split('@')[0]?.replace(/[^a-zA-Z0-9_]/g, '') || 'user';
         const username = baseUsername.slice(0, 30);
-        const data = await register(fullName.trim(), username, normalizedEmail, pass);
+        const data = await register(fullName.trim(), username, normalizedEmail, pass, role);
 
         if (data.message === 'User registered successfully.') {
           setIsRegister(false);

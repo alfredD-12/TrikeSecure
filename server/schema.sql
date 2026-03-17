@@ -99,9 +99,30 @@ CREATE TABLE IF NOT EXISTS complaints (
 
 CREATE TABLE IF NOT EXISTS ride_requests (
   request_id INT AUTO_INCREMENT PRIMARY KEY,
+  commuter_id INT NOT NULL,
   pickup_location VARCHAR(255) NOT NULL,
+  dropoff_location VARCHAR(255) NOT NULL,
+  pickup_lat DECIMAL(10, 8),
+  pickup_lng DECIMAL(11, 8),
+  dropoff_lat DECIMAL(10, 8),
+  dropoff_lng DECIMAL(11, 8),
+  fare_amount DECIMAL(10, 2),
   request_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   assigned_driver_id INT,
   status ENUM('waiting','accepted','completed','cancelled') DEFAULT 'waiting',
+  FOREIGN KEY (commuter_id) REFERENCES users(user_id) ON DELETE CASCADE,
   FOREIGN KEY (assigned_driver_id) REFERENCES drivers(driver_id)
+);
+
+CREATE TABLE IF NOT EXISTS sos_alerts (
+  alert_id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  user_role ENUM('commuter','driver') NOT NULL,
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
+  ride_id INT DEFAULT NULL,
+  message TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  status ENUM('active','resolved') DEFAULT 'active',
+  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );

@@ -10,7 +10,8 @@ import Header from '../components/Header';
 import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
 import LocationSearchModal from '../components/commuter/LocationSearchModal';
-import { getDriverByQr, logout, bookRide } from '../api';
+import SOSButton from '../components/SOSButton';
+import { getDriverByQr, logout, bookRide, cancelRide } from '../api';
 
 /* ── Fullscreen Searching Overlay ──────────────────────── */
 function SearchingOverlay({ onCancel }) {
@@ -110,7 +111,8 @@ export default function CommuterView({ mapRef }) {
   const scannerRef = useRef(null);
   const scannerLockedRef = useRef(false);
   const [confirmingPin, setConfirmingPin] = useState(false);
-  const [bookingStatus, setBookingStatus] = useState(null); // null | 'searching' | 'cancelled'
+  const [bookingStatus, setBookingStatus] = useState(null); // null | 'searching'
+  const [activeRideId, setActiveRideId] = useState(null); // request_id of in-progress booking
 
   // Computed state for booking validation
   const canBook = userPickup && destination;
@@ -119,13 +121,23 @@ export default function CommuterView({ mapRef }) {
     if (!canBook) return;
     setBookingStatus('searching');
     try {
-      await bookRide(userPickup.label || 'GPS Location', destination);
+      const result = await bookRide(
+        userPickup.label || 'GPS Location',
+        destination,
+        userPickup.lat ?? null,
+        userPickup.lng ?? null
+      );
+      if (result?.requestId) setActiveRideId(result.requestId);
     } catch {
-      // Even if the API call fails, we keep the animation for demo purposes
+      // Keep the animation even if API fails (demo mode)
     }
   }
 
-  function cancelBooking() {
+  async function cancelBooking() {
+    if (activeRideId) {
+      try { await cancelRide(activeRideId); } catch { /* best-effort */ }
+    }
+    setActiveRideId(null);
     setBookingStatus(null);
   }
 
@@ -246,17 +258,19 @@ export default function CommuterView({ mapRef }) {
 
   async function stopScanner() {
     if (!scannerRef.current) return;
+    const scanner = scannerRef.current;
+    scannerRef.current = null;
+    scannerLockedRef.current = false;
     try {
-      await scannerRef.current.stop();
+      await scanner.stop();
     } catch {
       // ignore stop errors when scanner did not fully initialize
     }
     try {
-      await scannerRef.current.clear();
+      await scanner.clear();
     } catch {
       // ignore clear errors
     }
-    scannerRef.current = null;
   }
 
   async function fetchScanResult(rawValue) {
@@ -318,9 +332,13 @@ export default function CommuterView({ mapRef }) {
           () => {}
         );
 
-        if (cancelled) return;
+        if (cancelled) {
+          await stopScanner();
+          return;
+        }
         setScanStatus('scanning');
       } catch {
+        await stopScanner();
         setScanStatus('error');
         setScanError('Unable to start camera scanner. Please allow camera access.');
       }
@@ -736,6 +754,8 @@ export default function CommuterView({ mapRef }) {
           </button>
         </div>
       </BottomSheet>
+
+      {scanResult && <SOSButton />}
 
       {/* Bottom Nav */}
       <nav className="v-nav">

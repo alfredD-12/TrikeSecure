@@ -9,9 +9,37 @@ const config = require('./config');
 const authRoutes = require('./routes/auth');
 const scanRoutes = require('./routes/scan');
 const ridesRoutes = require('./routes/rides');
+const sosRoutes = require('./routes/sos');
 
 const app = express();
 const MySQLStore = MySQLStoreFactory(session);
+
+function isDevPrivateNetworkOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return false;
+    }
+
+    const host = url.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return true;
+    }
+
+    if (host.startsWith('10.') || host.startsWith('192.168.')) {
+      return true;
+    }
+
+    if (host.startsWith('172.')) {
+      const secondOctet = Number(host.split('.')[1]);
+      return Number.isInteger(secondOctet) && secondOctet >= 16 && secondOctet <= 31;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 const sessionStore = new MySQLStore({
   host: config.database.host,
@@ -45,6 +73,10 @@ app.use(cors({
     }
 
     if (config.clientOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    if (!config.isProduction && isDevPrivateNetworkOrigin(origin)) {
       return callback(null, true);
     }
 
@@ -86,6 +118,7 @@ app.use(session({
 app.use('/api/auth', authRoutes);
 app.use('/api/scan', scanRoutes);
 app.use('/api/rides', ridesRoutes);
+app.use('/api/sos', sosRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

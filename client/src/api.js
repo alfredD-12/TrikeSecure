@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+export const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 async function parseResponse(res) {
   const data = await res.json().catch(() => ({ message: 'Unexpected server response.' }));
@@ -8,12 +8,12 @@ async function parseResponse(res) {
   return data;
 }
 
-export async function register(fullName, username, email, password) {
+export async function register(fullName, username, email, password, role = 'commuter') {
   const res = await fetch(`${API_URL}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ fullName, username, email, password }),
+    body: JSON.stringify({ fullName, username, email, password, role }),
   });
   return parseResponse(res);
 }
@@ -51,12 +51,37 @@ export async function getDriverByQr(qrValue) {
   return parseResponse(res);
 }
 
-export async function bookRide(pickup, dropoff) {
+export async function bookRide(pickup, dropoff, pickupLat = null, pickupLng = null) {
   const res = await fetch(`${API_URL}/rides/request`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ pickup, dropoff }),
+    body: JSON.stringify({ pickup, dropoff, pickupLat, pickupLng }),
+  });
+  return parseResponse(res);
+}
+
+export async function cancelRide(requestId) {
+  const res = await fetch(`${API_URL}/rides/${requestId}/cancel`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  return parseResponse(res);
+}
+
+export async function getDriverProfile() {
+  const res = await fetch(`${API_URL}/rides/driver-profile`, {
+    credentials: 'include',
+  });
+  return parseResponse(res);
+}
+
+export async function triggerSOS(latitude, longitude, rideId = null, message = null) {
+  const res = await fetch(`${API_URL}/sos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ latitude, longitude, rideId, message }),
   });
   return parseResponse(res);
 }

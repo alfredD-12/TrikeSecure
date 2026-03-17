@@ -23,6 +23,7 @@ export function AppProvider({ children }) {
   const [destinationPin, setDestinationPin] = useState(null); // { lat, lng, label } from map tap
   const [liveLocation, setLiveLocation] = useState(null);  // { lat, lng, accuracy } from watchPosition
   const [isMapMoving, setIsMapMoving] = useState(false);
+  const [pendingRides, setPendingRides] = useState([]);
   // Initialize dynamicDict from localStorage
   const [dynamicDict, setDynamicDict] = useState(() => {
     try {
@@ -129,7 +130,7 @@ export function AppProvider({ children }) {
   }, [lang, dynamicDict]);
 
   return (
-    <AppContext.Provider value={{ lang, darkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, dynamicDict, setDynamicDict, liveLocation, setLiveLocation, isMapMoving, setIsMapMoving }}>
+    <AppContext.Provider value={{ lang, darkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, dynamicDict, setDynamicDict, liveLocation, setLiveLocation, isMapMoving, setIsMapMoving, pendingRides, setPendingRides }}>
       {children}
     </AppContext.Provider>
   );

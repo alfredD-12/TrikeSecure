@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { useApp } from '../contexts/AppContext';
+import { API_URL } from '../api';
 import '../styles/MapBackground.css';
 
 // Fix Leaflet default icon paths broken by Vite bundling
@@ -175,6 +176,23 @@ const pickupIcon = L.divIcon({
   popupAnchor: [0, -42],
 });
 
+const commuterRequestIconHtml = `
+  <div style="background:#f97316;border:4px solid white;border-radius:50%;width:40px;height:40px;
+    box-shadow:0 6px 20px rgba(249,115,22,0.4),0 0 0 8px rgba(249,115,22,0.15);
+    display:flex;align-items:center;justify-content:center;animation:pulse-ring 2s ease-out infinite;">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+      <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+    </svg>
+  </div>`;
+
+const commuterRequestIcon = L.divIcon({
+  className: 'custom-div-icon',
+  html: commuterRequestIconHtml,
+  iconSize: [40, 40],
+  iconAnchor: [20, 40],
+  popupAnchor: [0, -44],
+});
+
 // Tile layer that reacts to dark mode changes
 function DarkAwareTileLayer({ darkMode }) {
   const tileUrl = darkMode
@@ -280,8 +298,81 @@ function FlyToPoint() {
   return null;
 }
 
+// Self-contained commuter-request pin layer with accept action
+function CommuterRequestMarkers() {
+  const { pendingRides, setPendingRides } = useApp();
+  const [acceptingId, setAcceptingId] = useState(null);
+  const [errorId, setErrorId] = useState(null);
+
+  async function acceptFromMap(rideId) {
+    setAcceptingId(rideId);
+    setErrorId(null);
+    try {
+      const res = await fetch(`${API_URL}/rides/${rideId}/accept`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        // Optimistic removal — next poll from DriverView will confirm
+        setPendingRides(prev => prev.filter(r => r.request_id !== rideId));
+      } else {
+        setErrorId(rideId);
+        setTimeout(() => setErrorId(null), 3000);
+      }
+    } catch {
+      setErrorId(rideId);
+      setTimeout(() => setErrorId(null), 3000);
+    } finally {
+      setAcceptingId(null);
+    }
+  }
+
+  const popupStyle = { fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px 2px', minWidth: '200px' };
+
+  return (
+    <>
+      {pendingRides
+        .filter(r => r.pickup_lat != null && r.pickup_lng != null)
+        .map(r => (
+          <Marker key={r.request_id} position={[r.pickup_lat, r.pickup_lng]} icon={commuterRequestIcon}>
+            <Popup>
+              <div style={popupStyle}>
+                <div style={{ fontWeight: 700, color: '#ea580c', fontSize: '13px', marginBottom: '6px' }}>🙋 Ride Request</div>
+                <div style={{ fontWeight: 700, color: '#1f2937', fontSize: '14px' }}>{r.commuter_name}</div>
+                <div style={{ color: '#6b7280', fontSize: '12px', marginTop: '4px' }}>📍 {r.pickup_location}</div>
+                {r.dropoff_location && (
+                  <div style={{ color: '#6b7280', fontSize: '12px', marginTop: '2px' }}>🏁 {r.dropoff_location}</div>
+                )}
+                <div style={{ marginTop: '10px', display: 'flex', gap: '6px' }}>
+                  <button
+                    onClick={() => acceptFromMap(r.request_id)}
+                    disabled={acceptingId === r.request_id}
+                    style={{
+                      flex: 1, background: acceptingId === r.request_id ? '#86efac' : '#22c55e',
+                      color: 'white', border: 'none', borderRadius: '8px',
+                      padding: '7px 10px', fontWeight: 700, fontSize: '12px',
+                      cursor: acceptingId === r.request_id ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {acceptingId === r.request_id ? 'Accepting…' : '✓ Accept Ride'}
+                  </button>
+                </div>
+                {errorId === r.request_id && (
+                  <div style={{ color: '#dc2626', fontSize: '11px', marginTop: '4px', fontWeight: 600 }}>
+                    Already taken — refreshing…
+                  </div>
+                )}
+              </div>
+            </Popup>
+          </Marker>
+        ))
+      }
+    </>
+  );
+}
+
 export default function MapBackground({ mapRef }) {
-  const { darkMode, userPickup, destinationPin, pinTarget, view } = useApp();
+  const { darkMode, userPickup, destinationPin, pinTarget, view, pendingRides } = useApp();
   const isCommuter = view === 'commuter';
 
   return (
@@ -344,6 +435,8 @@ export default function MapBackground({ mapRef }) {
           </Popup>
         </Marker>
         )}
+        {/* Commuter request markers — pulsing orange pins, only in driver view */}
+        {!isCommuter && <CommuterRequestMarkers />}
       </MapContainer>
     </div>
   );

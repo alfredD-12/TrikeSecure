@@ -54,6 +54,9 @@ router.post('/register', async (req, res) => {
   const username = typeof req.body.username === 'string' ? req.body.username.trim() : '';
   const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   const password = req.body.password;
+  // Only allow self-registration as commuter or driver (not admin/officer)
+  const allowedRoles = ['commuter', 'driver'];
+  const role = allowedRoles.includes(req.body.role) ? req.body.role : 'commuter';
 
   if (!validateFullName(fullName) || !validateUsername(username) || !validateEmail(email) || !validatePassword(password)) {
     return res.status(400).json({
@@ -69,8 +72,8 @@ router.post('/register', async (req, res) => {
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     await db.query(
       `INSERT INTO users (full_name, username, email, password, role)
-       VALUES (?, ?, ?, ?, 'commuter')`,
-      [fullName, username, email, hash],
+       VALUES (?, ?, ?, ?, ?)`,
+      [fullName, username, email, hash, role],
     );
     res.status(201).json({ message: 'User registered successfully.' });
   } catch (err) {
