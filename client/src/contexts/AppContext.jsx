@@ -7,7 +7,15 @@ const AppContext = createContext(null);
 export function AppProvider({ children }) {
   const [lang, setLang] = useState(() => localStorage.getItem('language') || 'en');
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'enabled');
-  const [view, setView] = useState('login'); // 'login' | 'driver' | 'commuter'
+  
+  const [view, setView] = useState(() => {
+    // Basic routing: if the URL explicitly asks for admin, show the admin login
+    if (window.location.pathname.startsWith('/admin')) {
+      return 'admin-login';
+    }
+    return 'login';
+  }); // 'login' | 'driver' | 'commuter' | 'admin-login' | 'admin-dashboard'
+
   const [currentUser, setCurrentUser] = useState(() => {
     const raw = localStorage.getItem('currentUser');
     if (!raw) return null;
@@ -65,7 +73,21 @@ export function AppProvider({ children }) {
       const me = await getMe();
       if (!isMounted) return;
 
+      const isAdminRoute = window.location.pathname.startsWith('/admin');
+
       if (me?.userId) {
+        if (isAdminRoute) {
+          if (me.role === 'admin') {
+            setCurrentUser({ ...me });
+            setView('admin-dashboard');
+          } else {
+            // Found a non-admin session on the admin route. Force view to admin-login
+            setCurrentUser(null);
+            setView('admin-login');
+          }
+          return;
+        }
+
         const resolvedRole = me.role === 'driver' ? 'driver' : 'commuter';
         setCurrentUser({
           username: me.username,
@@ -78,7 +100,7 @@ export function AppProvider({ children }) {
       }
 
       setCurrentUser(null);
-      setView('login');
+      setView(isAdminRoute ? 'admin-login' : 'login');
     }
 
     restoreSession();
@@ -130,7 +152,7 @@ export function AppProvider({ children }) {
   }, [lang, dynamicDict]);
 
   return (
-    <AppContext.Provider value={{ lang, darkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, dynamicDict, setDynamicDict, liveLocation, setLiveLocation, isMapMoving, setIsMapMoving, pendingRides, setPendingRides }}>
+    <AppContext.Provider value={{ lang, darkMode, setDarkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, dynamicDict, setDynamicDict, liveLocation, setLiveLocation, isMapMoving, setIsMapMoving, pendingRides, setPendingRides }}>
       {children}
     </AppContext.Provider>
   );
