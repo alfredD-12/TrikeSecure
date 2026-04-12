@@ -1,0 +1,253 @@
+export const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+function isFileLike(value) {
+  if (typeof File !== 'undefined' && value instanceof File) {
+    return true;
+  }
+
+  if (typeof Blob !== 'undefined' && value instanceof Blob) {
+    return true;
+  }
+
+  return false;
+}
+
+function appendFormValue(formData, key, value) {
+  if (value == null || value === '') {
+    return;
+  }
+
+  if (isFileLike(value)) {
+    formData.append(key, value, value.name || key);
+    return;
+  }
+
+  formData.append(key, String(value));
+}
+
+async function parseResponse(res) {
+  const contentType = res.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    const data = await res.json().catch(() => ({ message: 'Invalid JSON response from server.' }));
+    if (!res.ok) {
+      return { message: data?.message || `Request failed with status ${res.status}.` };
+    }
+    return data;
+  }
+
+  const text = await res.text().catch(() => '');
+  if (!res.ok) {
+    return {
+      message: `Server returned a non-JSON ${res.status} response. Check that the backend is running and that you opened the active Vite port.`,
+      details: text.slice(0, 200),
+    };
+  }
+
+  return text ? { message: text } : { message: 'Request succeeded.' };
+}
+
+async function apiFetch(path, options = {}) {
+  const res = await fetch(`${API_URL}${path}`, {
+    credentials: 'include',
+    ...options,
+  });
+
+  return parseResponse(res);
+}
+
+export async function register(fullName, username, email, password, role = 'commuter') {
+  const res = await fetch(`${API_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ fullName, username, email, password, role }),
+  });
+  return parseResponse(res);
+}
+
+export async function login(email, password) {
+  const res = await fetch(`${API_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ email, password }),
+  });
+  return parseResponse(res);
+}
+
+export async function logout() {
+  return apiFetch('/auth/logout', {
+    method: 'POST',
+  });
+}
+
+export async function getMe() {
+  return apiFetch('/auth/me');
+}
+
+export async function getDriverByQr(qrValue) {
+  const encoded = encodeURIComponent(qrValue);
+  return apiFetch(`/scan/qr/${encoded}`);
+}
+
+export async function bookRide(pickup, dropoff, pickupLat = null, pickupLng = null) {
+  const res = await fetch(`${API_URL}/rides/request`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ pickup, dropoff, pickupLat, pickupLng }),
+  });
+  return parseResponse(res);
+}
+
+export async function cancelRide(requestId) {
+  return apiFetch(`/rides/${requestId}/cancel`, {
+    method: 'POST',
+  });
+}
+
+export async function getDriverProfile() {
+  return apiFetch('/rides/driver-profile');
+}
+
+export async function getDriverOnboarding() {
+  return apiFetch('/driver/onboarding');
+}
+
+export async function getApprovedDriverTodas() {
+  return apiFetch('/driver/todas');
+}
+
+export async function getNasugbuBarangays() {
+  return apiFetch('/driver/reference/nasugbu-barangays');
+}
+
+export async function getTodaCodePreview(barangayCode) {
+  const params = new URLSearchParams();
+  if (barangayCode) {
+    params.set('barangayCode', barangayCode);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch(`/driver/reference/toda-code-preview${suffix}`);
+}
+
+export async function submitDriverMembershipApplication(payload) {
+  const formData = new FormData();
+  Object.entries(payload || {}).forEach(([key, value]) => {
+    appendFormValue(formData, key, value);
+  });
+
+  const res = await fetch(`${API_URL}/driver/membership-application`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  return parseResponse(res);
+}
+
+export async function submitDriverTodaApplication(payload) {
+  const formData = new FormData();
+  Object.entries(payload || {}).forEach(([key, value]) => {
+    appendFormValue(formData, key, value);
+  });
+
+  const res = await fetch(`${API_URL}/driver/toda-application`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  return parseResponse(res);
+}
+
+export async function getPresidentMembershipRequests(status = 'pending') {
+  const params = new URLSearchParams();
+  if (status) {
+    params.set('status', status);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch(`/driver/membership-requests${suffix}`);
+}
+
+export async function reviewPresidentMembershipRequest(driverId, payload) {
+  return apiFetch(`/driver/membership-requests/${driverId}/review`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function submitDriverFranchiseApplication(payload) {
+  const formData = new FormData();
+  Object.entries(payload || {}).forEach(([key, value]) => {
+    appendFormValue(formData, key, value);
+  });
+
+  const res = await fetch(`${API_URL}/driver/franchise-application`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+
+  return parseResponse(res);
+}
+
+export async function triggerSOS(latitude, longitude, rideId = null, message = null) {
+  const res = await fetch(`${API_URL}/sos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ latitude, longitude, rideId, message }),
+  });
+  return parseResponse(res);
+}
+
+export async function getAdminTodas(status = null) {
+  const params = new URLSearchParams();
+  if (status) {
+    params.set('status', status);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch(`/admin/todas${suffix}`);
+}
+
+export async function reviewAdminToda(todaId, status, remarks = '') {
+  return apiFetch(`/admin/todas/${todaId}/review`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, remarks }),
+  });
+}
+
+export async function getAdminDrivers(membershipStatus = null) {
+  const params = new URLSearchParams();
+  if (membershipStatus) {
+    params.set('membershipStatus', membershipStatus);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch(`/admin/drivers${suffix}`);
+}
+
+export async function getAdminFranchises(status = null) {
+  const params = new URLSearchParams();
+  if (status) {
+    params.set('status', status);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch(`/admin/franchises${suffix}`);
+}
+
+export async function reviewAdminFranchise(franchiseId, payload) {
+  return apiFetch(`/admin/franchises/${franchiseId}/review`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
