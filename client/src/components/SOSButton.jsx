@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { triggerSOS } from '../api';
+import { triggerSOS } from '../services/api';
 
 const COUNTDOWN_SECONDS = 5;
 const CIRCLE_RADIUS = 54;

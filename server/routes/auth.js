@@ -4,6 +4,7 @@ const db = require('../db');
 const config = require('../config');
 const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
+const { serializeUser, setSessionUser } = require('../auth/sessionAuth');
 
 const BCRYPT_ROUNDS = config.security.bcryptSaltRounds;
 const ENABLE_AUTH_RATE_LIMIT = false;
@@ -66,8 +67,9 @@ router.post('/register', async (req, res) => {
 
   try {
     const [existing] = await db.query('SELECT user_id FROM users WHERE email = ? OR username = ?', [email, username]);
-    if (existing.length > 0)
+    if (existing.length > 0) {
       return res.status(409).json({ message: 'Email or username already in use.' });
+    }
 
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     await db.query(
@@ -75,6 +77,7 @@ router.post('/register', async (req, res) => {
        VALUES (?, ?, ?, ?, ?)`,
       [fullName, username, email, hash, role],
     );
+
     res.status(201).json({ message: 'User registered successfully.' });
   } catch (err) {
     console.error(err);
@@ -92,13 +95,19 @@ router.post('/login', async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      'SELECT user_id, username, full_name, email, password, role FROM users WHERE email = ? LIMIT 1',
+      'SELECT user_id, username, full_name, email, password, role, status FROM users WHERE email = ? LIMIT 1',
       [email],
     );
-    if (rows.length === 0)
+    if (rows.length === 0) {
       return res.status(401).json({ message: 'Invalid credentials.' });
+    }
 
     const user = rows[0];
+
+    if (user.status !== 'active') {
+      return res.status(403).json({ message: 'This account is not active.' });
+    }
+
     if (!isLikelyBcryptHash(user.password)) {
       console.warn(`Skipping login for user_id=${user.user_id}: stored password is not a valid bcrypt hash.`);
       return res.status(401).json({ message: 'Invalid credentials.' });
@@ -115,8 +124,9 @@ router.post('/login', async (req, res) => {
       throw compareError;
     }
 
-    if (!match)
+    if (!match) {
       return res.status(401).json({ message: 'Invalid credentials.' });
+    }
 
     req.session.regenerate((sessionError) => {
       if (sessionError) {
@@ -124,18 +134,11 @@ router.post('/login', async (req, res) => {
         return res.status(500).json({ message: 'Server error.' });
       }
 
-      req.session.userId = user.user_id;
-      req.session.username = user.username;
-      req.session.fullName = user.full_name;
-      req.session.email = user.email;
-      req.session.role = user.role;
+      const sessionUser = setSessionUser(req, user);
 
       return res.json({
         message: 'Login successful.',
-        username: user.username,
-        fullName: user.full_name,
-        email: user.email,
-        role: user.role,
+        ...sessionUser,
       });
     });
   } catch (err) {
@@ -155,15 +158,18 @@ router.post('/logout', (req, res) => {
 
 // Get current session user
 router.get('/me', (req, res) => {
-  if (!req.session.userId)
+  if (!req.session.userId) {
     return res.status(401).json({ message: 'Not authenticated.' });
-  res.json({
-    userId: req.session.userId,
+  }
+
+  res.json(serializeUser({
+    user_id: req.session.userId,
     username: req.session.username,
-    fullName: req.session.fullName,
+    full_name: req.session.fullName,
     email: req.session.email,
-    role: req.session.role,
-  });
+    role: req.session.accountRole || req.session.role,
+    status: req.session.status || 'active',
+  }));
 });
 
 module.exports = router;

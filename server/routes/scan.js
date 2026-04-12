@@ -1,13 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-
-function requireAuth(req, res, next) {
-  if (!req.session?.userId) {
-    return res.status(401).json({ message: 'Not authenticated.' });
-  }
-  return next();
-}
+const { requireAuth } = require('../auth/sessionAuth');
 
 router.use(requireAuth);
 
@@ -21,28 +15,31 @@ router.get('/qr/:value', async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      `SELECT
-         t.tricycle_id,
-         t.body_number,
-         t.plate_number,
-         t.qr_code_value,
-         t.toda_name AS tricycle_toda,
-         t.status AS tricycle_status,
-         t.franchise_expiry,
-         d.driver_id,
-         d.license_number,
-         d.contact_number,
-         d.toda_name AS driver_toda,
-         d.status AS driver_status,
-         u.user_id,
-         u.full_name,
-         u.username,
-         u.status AS user_status
-       FROM tricycles t
-       INNER JOIN drivers d ON d.driver_id = t.driver_id
-       INNER JOIN users u ON u.user_id = d.user_id
-       WHERE t.qr_code_value = ? OR t.body_number = ?
-       LIMIT 1`,
+      `
+        SELECT
+          t.tricycle_id,
+          t.body_number,
+          t.plate_number,
+          t.qr_code_value,
+          td.toda_name,
+          t.status AS tricycle_status,
+          t.franchise_expiry,
+          d.driver_id,
+          d.license_number,
+          d.contact_number,
+          d.membership_status,
+          d.membership_role,
+          u.user_id,
+          u.full_name,
+          u.username,
+          u.status AS user_status
+        FROM tricycles t
+        INNER JOIN drivers d ON d.driver_id = t.driver_id
+        INNER JOIN users u ON u.user_id = d.user_id
+        LEFT JOIN todas td ON td.toda_id = t.toda_id
+        WHERE t.qr_code_value = ? OR t.body_number = ?
+        LIMIT 1
+      `,
       [decodedValue, decodedValue],
     );
 
@@ -56,7 +53,7 @@ router.get('/qr/:value', async (req, res) => {
       bodyNumber: record.body_number,
       plateNumber: record.plate_number,
       qrCodeValue: record.qr_code_value,
-      todaName: record.tricycle_toda || record.driver_toda || '',
+      todaName: record.toda_name || '',
       tricycleStatus: record.tricycle_status,
       franchiseExpiry: record.franchise_expiry,
       driver: {
@@ -65,12 +62,14 @@ router.get('/qr/:value', async (req, res) => {
         username: record.username,
         licenseNumber: record.license_number,
         contactNumber: record.contact_number,
-        status: record.driver_status,
+        status: record.membership_status,
+        membershipStatus: record.membership_status,
+        membershipRole: record.membership_role,
       },
       userStatus: record.user_status,
     });
   } catch (error) {
-    console.error(error);
+    console.error('QR scan error:', error);
     return res.status(500).json({ message: 'Server error.' });
   }
 });

@@ -1,4 +1,6 @@
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const cors = require('cors');
 const session = require('express-session');
 const MySQLStoreFactory = require('express-mysql-session');
@@ -7,12 +9,17 @@ const rateLimit = require('express-rate-limit');
 const config = require('./config');
 
 const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
+const driverRoutes = require('./routes/driver');
 const scanRoutes = require('./routes/scan');
 const ridesRoutes = require('./routes/rides');
 const sosRoutes = require('./routes/sos');
 
 const app = express();
 const MySQLStore = MySQLStoreFactory(session);
+const uploadsRoot = path.join(__dirname, 'uploads');
+
+fs.mkdirSync(uploadsRoot, { recursive: true });
 
 function isDevPrivateNetworkOrigin(origin) {
   try {
@@ -88,6 +95,7 @@ app.use(helmet({
   crossOriginResourcePolicy: false,
 }));
 app.use(express.json({ limit: '10kb' }));
+app.use('/uploads', express.static(uploadsRoot));
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -116,6 +124,8 @@ app.use(session({
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/driver', driverRoutes);
 app.use('/api/scan', scanRoutes);
 app.use('/api/rides', ridesRoutes);
 app.use('/api/sos', sosRoutes);

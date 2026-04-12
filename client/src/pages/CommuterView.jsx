@@ -11,7 +11,7 @@ import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
 import LocationSearchModal from '../components/commuter/LocationSearchModal';
 import SOSButton from '../components/SOSButton';
-import { getDriverByQr, logout, bookRide, cancelRide } from '../api';
+import { getDriverByQr, logout, bookRide, cancelRide } from '../services/api';
 
 /* ── Fullscreen Searching Overlay ──────────────────────── */
 function SearchingOverlay({ onCancel }) {

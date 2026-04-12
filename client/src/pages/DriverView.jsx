@@ -1,33 +1,113 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Compass, User, Wallet, Route, CheckCircle2,
-  FileText, History, LogOut, ChevronRight, Loader2, MapPin,
-  Clock, AlertCircle, Phone
+  FileText, History, LogOut, Loader2, MapPin,
+  Clock, AlertCircle, Phone, Users, BadgeCheck, Shield, ChevronRight
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import Header from '../components/Header';
 import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
 import SOSButton from '../components/SOSButton';
-import { logout, API_URL, getDriverProfile } from '../api';
+import DriverOnboardingPanel from '../components/driver/DriverOnboardingPanel';
+import PresidentMembershipTab from '../components/driver/PresidentMembershipTab';
+import {
+  logout,
+  API_URL,
+  getDriverProfile,
+  getApprovedDriverTodas,
+  getNasugbuBarangays,
+  submitDriverMembershipApplication,
+  submitDriverTodaApplication,
+  submitDriverFranchiseApplication,
+} from '../services/api';
+
+function statusChip(value) {
+  const tone = String(value || 'unknown').toLowerCase();
+  const palette = {
+    pending: 'border-amber-200 bg-amber-50 text-amber-700',
+    approved: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    rejected: 'border-red-200 bg-red-50 text-red-700',
+    president: 'border-blue-200 bg-blue-50 text-blue-700',
+    member: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+    active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    not_applied: 'border-slate-200 bg-slate-50 text-slate-700',
+  };
+
+  return `inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${palette[tone] || 'border-slate-200 bg-slate-50 text-slate-700'}`;
+}
+
+function summaryCard(icon, label, value, accentClass) {
+  return (
+    <div className="rounded-[24px] border border-white/60 bg-white/90 p-4 shadow-[0_16px_50px_rgba(15,23,42,0.08)] backdrop-blur">
+      <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-2xl ${accentClass}`}>
+        {icon}
+      </div>
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</p>
+      <p className="mt-1 text-xl font-black text-slate-900">{value}</p>
+    </div>
+  );
+}
 
 export default function DriverView({ mapRef }) {
   const { t, setView, setCurrentUser, currentUser, pendingRides, setPendingRides } = useApp();
   const [activeTab, setActiveTab] = useState('home');
   const [dutyOn, setDutyOn] = useState(true);
   const [ridesLoading, setRidesLoading] = useState(true);
-  const [acceptError, setAcceptError] = useState(null);
   const [toast, setToast] = useState(null);          // { msg, type } 'success' | 'error'
   const [passedIds, setPassedIds] = useState(new Set()); // hidden for this session
   const [acceptingId, setAcceptingId] = useState(null);
   const toastTimer = useRef(null);
   const [driverProfile, setDriverProfile] = useState(null);
+  const [approvedTodas, setApprovedTodos] = useState([]);
+  const [nasugbuBarangays, setNasugbuBarangays] = useState([]);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const showPresidentTab = Boolean(driverProfile?.presidentToolsEnabled);
+  const isOnboardingLocked = Boolean(driverProfile && !driverProfile.canOperate);
 
   function showToast(msg, type = 'success') {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ msg, type });
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   }
+
+  const loadDriverData = useCallback(async (withSpinner = false) => {
+    if (withSpinner) {
+      setProfileLoading(true);
+    }
+
+    setProfileError('');
+
+    const [profileResult, todaResult, barangayResult] = await Promise.all([
+      getDriverProfile(),
+      getApprovedDriverTodas(),
+      getNasugbuBarangays(),
+    ]);
+
+    if (profileResult?.message && !profileResult?.onboardingStep && !profileResult?.driverId) {
+      setProfileError(profileResult.message || 'Failed to load driver account.');
+      setDriverProfile(null);
+    } else {
+      setDriverProfile(profileResult);
+      if (profileResult && !profileResult.canOperate) {
+        setActiveTab((current) => (current === 'home' ? 'account' : current));
+      }
+    }
+
+    if (Array.isArray(todaResult)) {
+      setApprovedTodos(todaResult);
+    }
+
+    if (Array.isArray(barangayResult?.barangays)) {
+      setNasugbuBarangays(barangayResult.barangays);
+    }
+
+    if (withSpinner) {
+      setProfileLoading(false);
+    }
+  }, []);
 
   function flyToRide(req) {
     if (!mapRef?.current || req.pickup_lat == null || req.pickup_lng == null) return;
@@ -82,36 +162,44 @@ export default function DriverView({ mapRef }) {
   };
 
   const fetchPendingRides = useCallback(async () => {
-    if (!dutyOn) { setPendingRides([]); setRidesLoading(false); return; }
+    if (!dutyOn || !driverProfile?.canOperate) {
+      setPendingRides([]);
+      setRidesLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch(`${API_URL}/rides/nearby`, { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setPendingRides(data);
+      } else if (res.status === 403) {
+        setPendingRides([]);
+        await loadDriverData(false);
       }
     } catch (err) {
       console.error('Failed to fetch rides:', err);
     } finally {
       setRidesLoading(false);
     }
-  }, [dutyOn]);
+  }, [dutyOn, driverProfile?.canOperate, loadDriverData, setPendingRides]);
 
   useEffect(() => {
     setRidesLoading(true);
     fetchPendingRides();
     const interval = setInterval(fetchPendingRides, 5000);
     return () => clearInterval(interval);
-  }, [dutyOn, fetchPendingRides]);
+  }, [fetchPendingRides]);
 
   useEffect(() => {
-    getDriverProfile().then(data => {
-      if (data && !data.message) setDriverProfile(data);
-    }).catch(() => {});
-  }, []);
+    loadDriverData(true).catch(() => {
+      setProfileError('Failed to load driver account.');
+      setProfileLoading(false);
+    });
+  }, [loadDriverData]);
 
   const acceptRide = async (rideId) => {
     setAcceptingId(rideId);
-    setAcceptError(null);
     try {
       const res = await fetch(`${API_URL}/rides/${rideId}/accept`, {
         method: 'POST',
@@ -120,10 +208,11 @@ export default function DriverView({ mapRef }) {
       if (res.ok) {
         setPendingRides(prev => prev.filter(r => r.request_id !== rideId));
         showToast(t('driver-toast-accepted'), 'success');
-        getDriverProfile().then(d => { if (d && !d.message) setDriverProfile(d); }).catch(() => {});
+        await loadDriverData(false);
       } else {
         const data = await res.json();
         showToast(data.message || t('driver-toast-unavailable'), 'error');
+        await loadDriverData(false);
         fetchPendingRides();
       }
     } catch {
@@ -133,17 +222,152 @@ export default function DriverView({ mapRef }) {
     }
   };
 
+  async function handleMembershipSubmit(payload) {
+    setSubmitting(true);
+    const result = await submitDriverMembershipApplication(payload);
+    if (result?.state) {
+      showToast(result.message || 'Membership application submitted.', 'success');
+      await loadDriverData(false);
+    } else {
+      showToast(result.message || 'Failed to submit membership application.', 'error');
+    }
+    setSubmitting(false);
+  }
+
+  async function handleTodaSubmit(payload) {
+    setSubmitting(true);
+    const result = await submitDriverTodaApplication(payload);
+    if (result?.state) {
+      showToast(result.message || 'TODA application submitted.', 'success');
+      await loadDriverData(false);
+    } else {
+      showToast(result.message || 'Failed to submit TODA application.', 'error');
+    }
+    setSubmitting(false);
+  }
+
+  async function handleFranchiseSubmit(payload) {
+    setSubmitting(true);
+    const result = await submitDriverFranchiseApplication(payload);
+    if (result?.state) {
+      showToast(result.message || 'Franchise application submitted.', 'success');
+      await loadDriverData(false);
+    } else {
+      showToast(result.message || 'Failed to submit franchise application.', 'error');
+    }
+    setSubmitting(false);
+  }
+
   function passRide(rideId) {
     setPassedIds(prev => new Set([...prev, rideId]));
   }
 
   const visibleRides = pendingRides.filter(r => !passedIds.has(r.request_id));
   const displayName = currentUser?.fullName || currentUser?.username || 'Driver';
+  const shouldShowOnboardingOverlay = profileLoading || !driverProfile || !driverProfile.canOperate;
+
+  if (shouldShowOnboardingOverlay) {
+    return (
+      <div className="h-screen flex flex-col relative w-full max-w-lg mx-auto overflow-hidden">
+        {toast && (
+          <div
+            className={`fixed top-20 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2.5 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-bold whitespace-nowrap
+              ${toast.type === 'success'
+                ? 'bg-green-600 text-white'
+                : 'bg-red-500 text-white'}`}
+            style={{ animation: 'v-fadein 0.3s ease forwards' }}
+          >
+            {toast.type === 'success'
+              ? <CheckCircle2 size={16} />
+              : <AlertCircle size={16} />}
+            {toast.msg}
+          </div>
+        )}
+
+        <div className="absolute inset-0 z-10">
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.08),rgba(15,23,42,0.18))]" />
+          <div className="absolute -left-10 top-8 h-40 w-40 rounded-full bg-red-400/20 blur-3xl" />
+          <div className="absolute right-[-3rem] top-1/4 h-44 w-44 rounded-full bg-amber-300/18 blur-3xl" />
+          <div className="absolute bottom-14 left-1/3 h-36 w-36 rounded-full bg-emerald-300/18 blur-3xl" />
+          <div className="absolute inset-0 bg-white/6 backdrop-blur-[3px]" />
+        </div>
+
+        <div className="relative z-20 flex h-full flex-col px-3 pb-4 pt-4">
+          <div className="mb-auto flex items-start justify-between gap-3">
+            <div className="rounded-full border border-white/60 bg-white/78 px-4 py-2 shadow-[0_12px_30px_rgba(15,23,42,0.08)] backdrop-blur">
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-red-500">Driver Onboarding</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                {profileLoading ? 'Checking your account requirements' : 'Finish account setup to unlock operations'}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={doLogout}
+              className="rounded-full border border-white/60 bg-white/78 px-4 py-2 text-xs font-black uppercase tracking-wide text-slate-600 shadow-[0_12px_30px_rgba(15,23,42,0.08)] backdrop-blur transition hover:bg-white"
+            >
+              Logout
+            </button>
+          </div>
+
+          <div className="mt-6 rounded-[34px] border border-white/70 bg-white/92 shadow-[0_28px_80px_rgba(15,23,42,0.16)] backdrop-blur-xl">
+            <div className="border-b border-slate-100 px-5 py-5">
+              <p className="text-[10px] font-black uppercase tracking-[0.32em] text-red-500">Finish Account</p>
+              <h2 className="mt-2 text-[1.75rem] font-black leading-tight text-slate-900">
+                {profileLoading ? 'Preparing your driver profile' : 'Complete your driver account'}
+              </h2>
+              <p className="mt-2 text-sm font-semibold text-slate-500">
+                {profileError || driverProfile?.accessMessage || 'All required approvals and records must be completed before the overlay disappears.'}
+              </p>
+
+              {driverProfile && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className={statusChip(driverProfile.membershipStatus)}>{driverProfile.membershipStatus}</span>
+                  <span className={statusChip(driverProfile.membershipRole)}>{driverProfile.membershipRole}</span>
+                  {driverProfile.franchiseStatus && <span className={statusChip(driverProfile.franchiseStatus)}>{driverProfile.franchiseStatus}</span>}
+                </div>
+              )}
+            </div>
+
+            <div className="max-h-[72vh] overflow-y-auto px-5 py-5">
+              {driverProfile && (
+                <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  {summaryCard(<Shield size={18} className="text-red-500" />, 'TODA', driverProfile.todaName || 'Not joined yet', 'bg-red-50')}
+                  {summaryCard(<Users size={18} className="text-blue-500" />, 'Pending Reviews', String(driverProfile.pendingMembershipRequests || 0), 'bg-blue-50')}
+                  {summaryCard(<BadgeCheck size={18} className="text-emerald-500" />, 'Franchise', driverProfile.franchiseStatus || 'Not submitted', 'bg-emerald-50')}
+                </div>
+              )}
+
+              <DriverOnboardingPanel
+                driverProfile={driverProfile}
+                approvedTodas={approvedTodas}
+                nasugbuBarangays={nasugbuBarangays}
+                submitting={submitting}
+                onSubmitMembership={handleMembershipSubmit}
+                onSubmitToda={handleTodaSubmit}
+                onSubmitFranchise={handleFranchiseSubmit}
+              />
+
+              {showPresidentTab && (
+                <div className="mt-5">
+                  <PresidentMembershipTab
+                    enabled={showPresidentTab}
+                    pendingCount={driverProfile?.pendingMembershipRequests || 0}
+                    onAfterReview={() => loadDriverData(false)}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="h-screen flex flex-col relative w-full max-w-lg mx-auto">
-      <Header badge={driverProfile?.bodyNumber ?? undefined} />
-      <MapControls mapRef={mapRef} />
+    <div className={`h-screen flex flex-col relative w-full max-w-lg mx-auto ${isOnboardingLocked ? 'bg-[radial-gradient(circle_at_top,rgba(239,68,68,0.14),transparent_32%),linear-gradient(180deg,#fff8f7_0%,#f8fafc_35%,#eef2ff_100%)]' : ''}`}>
+      {!isOnboardingLocked && <Header badge={driverProfile?.bodyNumber ?? undefined} />}
+      {!isOnboardingLocked && <MapControls mapRef={mapRef} />}
 
       {/* Toast notification */}
       {toast && (
@@ -164,6 +388,65 @@ export default function DriverView({ mapRef }) {
       <BottomSheet id="driver">
         {/* ── Home / Duty Tab ───────────────────────────────── */}
         <div className={`tab-content${activeTab === 'home' ? ' active' : ''}`}>
+          {profileLoading ? (
+            <div className="flex min-h-[55vh] items-center justify-center">
+              <div className="text-center">
+                <Loader2 size={24} className="mx-auto mb-3 animate-spin text-red-500" />
+                <p className="text-sm font-semibold text-slate-500">Loading driver dashboard...</p>
+              </div>
+            </div>
+          ) : isOnboardingLocked ? (
+            <div className="space-y-5 pb-6">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.25em] text-red-500">Driver Onboarding</p>
+                <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-900">Finish your approvals first</h2>
+                <p className="mt-2 text-sm font-semibold text-slate-500">
+                  The ride map stays locked until TODA membership and franchise approval are both complete.
+                </p>
+              </div>
+
+              <div className="rounded-[30px] border border-white/60 bg-white/90 p-5 shadow-[0_16px_50px_rgba(15,23,42,0.08)] backdrop-blur">
+                <div className="mb-4 flex flex-wrap gap-2">
+                  <span className={statusChip(driverProfile?.membershipStatus)}>{driverProfile?.membershipStatus}</span>
+                  <span className={statusChip(driverProfile?.membershipRole)}>{driverProfile?.membershipRole}</span>
+                  {driverProfile?.franchiseStatus && <span className={statusChip(driverProfile.franchiseStatus)}>{driverProfile.franchiseStatus}</span>}
+                </div>
+                <p className="text-base font-black text-slate-900">
+                  {driverProfile?.accessMessage || 'Complete the next onboarding step to unlock driver operations.'}
+                </p>
+                <p className="mt-2 text-sm font-semibold text-slate-500">
+                  Current step: <span className="font-black capitalize text-slate-700">{String(driverProfile?.onboardingStep || 'start').replaceAll('_', ' ')}</span>
+                </p>
+
+                <div className="mt-5 flex flex-col gap-3">
+                  <button
+                    type="button"
+                    onClick={() => switchTab('account')}
+                    className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-red-200 transition hover:bg-red-500"
+                  >
+                    Open Account Setup
+                  </button>
+
+                  {showPresidentTab && (
+                    <button
+                      type="button"
+                      onClick={() => switchTab('president')}
+                      className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50"
+                    >
+                      Review Member Requests ({driverProfile?.pendingMembershipRequests || 0})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                {summaryCard(<Shield size={18} className="text-red-500" />, 'TODA', driverProfile?.todaName || 'Not joined yet', 'bg-red-50')}
+                {summaryCard(<Users size={18} className="text-blue-500" />, 'Pending Reviews', String(driverProfile?.pendingMembershipRequests || 0), 'bg-blue-50')}
+                {summaryCard(<BadgeCheck size={18} className="text-emerald-500" />, 'Franchise', driverProfile?.franchiseStatus || 'Not submitted', 'bg-emerald-50')}
+              </div>
+            </div>
+          ) : (
+            <>
 
           {/* Header row with duty toggle */}
           <div className="v-anim v-anim--1 flex justify-between items-center mb-5">
@@ -373,11 +656,26 @@ export default function DriverView({ mapRef }) {
               </button>
             )}
           </div>
+            </>
+          )}
         </div>
 
         {/* ── Account Tab ───────────────────────────────────── */}
         <div className={`tab-content pb-4${activeTab === 'account' ? ' active' : ''}`}>
-          <h2 className="v-anim v-anim--1 text-3xl font-black text-gray-900 mb-8 tracking-tight">{t('driver-account-title')}</h2>
+          <h2 className="text-3xl font-black text-gray-900 mb-8 tracking-tight">{isOnboardingLocked ? 'Driver Setup' : t('driver-account-title')}</h2>
+
+          {profileLoading && (
+            <div className="mb-5 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm font-semibold text-slate-500 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+              <Loader2 size={16} className="animate-spin text-red-500" />
+              Loading account setup...
+            </div>
+          )}
+
+          {profileError && (
+            <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+              {profileError}
+            </div>
+          )}
 
           {/* Profile identity card */}
           <div className="v-anim v-anim--2 v-profile-card mb-8" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(243,244,246,0.5) 100%)' }}>
@@ -398,6 +696,24 @@ export default function DriverView({ mapRef }) {
               <div className="bg-white/10 backdrop-blur px-3 py-1.5 rounded-lg">{driverProfile?.todayTrips ?? 0} {t('driver-trips')}</div>
               <div className="bg-white/10 backdrop-blur px-3 py-1.5 rounded-lg">⭐ 5.0 Rating</div>
             </div>
+          </div>
+
+          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {summaryCard(<Wallet size={18} className="text-blue-500" />, 'Today', `P${Number(driverProfile?.todayEarnings ?? 0).toFixed(2)}`, 'bg-blue-50')}
+            {summaryCard(<History size={18} className="text-orange-500" />, 'Trips', String(driverProfile?.todayTrips ?? 0), 'bg-orange-50')}
+            {summaryCard(<Users size={18} className="text-emerald-500" />, 'Pending Reviews', String(driverProfile?.pendingMembershipRequests || 0), 'bg-emerald-50')}
+          </div>
+
+          <div className="mb-8">
+            <DriverOnboardingPanel
+              driverProfile={driverProfile}
+              approvedTodas={approvedTodas}
+              nasugbuBarangays={nasugbuBarangays}
+              submitting={submitting}
+              onSubmitMembership={handleMembershipSubmit}
+              onSubmitToda={handleTodaSubmit}
+              onSubmitFranchise={handleFranchiseSubmit}
+            />
           </div>
 
           {/* Menu rows */}
@@ -425,9 +741,19 @@ export default function DriverView({ mapRef }) {
             <span>{t('driver-logout')}</span>
           </button>
         </div>
+
+        {showPresidentTab && (
+          <div className={`tab-content pb-4${activeTab === 'president' ? ' active' : ''}`}>
+            <PresidentMembershipTab
+              enabled={showPresidentTab}
+              pendingCount={driverProfile?.pendingMembershipRequests || 0}
+              onAfterReview={() => loadDriverData(false)}
+            />
+          </div>
+        )}
       </BottomSheet>
 
-      <SOSButton />
+      {!isOnboardingLocked && <SOSButton />}
 
       {/* Bottom Nav */}
       <nav className="v-nav">
@@ -437,21 +763,30 @@ export default function DriverView({ mapRef }) {
         >
           <div className="relative">
             <Compass size={24} />
-            {pendingRides.length > 0 && dutyOn && (
+            {!isOnboardingLocked && pendingRides.length > 0 && dutyOn && (
               <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 rounded-full text-white text-[9px] font-black flex items-center justify-center">
                 {pendingRides.length > 9 ? '9+' : pendingRides.length}
               </span>
             )}
           </div>
-          <span className="v-nav-label">{t('driver-nav-duty')}</span>
+          <span className="v-nav-label">{isOnboardingLocked ? 'Status' : t('driver-nav-duty')}</span>
         </button>
         <button
           onClick={() => switchTab('account')}
           className={`v-nav-item ${activeTab === 'account' ? 'active-green' : ''}`}
         >
           <User size={24} />
-          <span className="v-nav-label">{t('driver-nav-account')}</span>
+          <span className="v-nav-label">{isOnboardingLocked ? 'Setup' : t('driver-nav-account')}</span>
         </button>
+        {showPresidentTab && (
+          <button
+            onClick={() => switchTab('president')}
+            className={`v-nav-item ${activeTab === 'president' ? 'active-green' : ''}`}
+          >
+            <Users size={24} />
+            <span className="v-nav-label">President</span>
+          </button>
+        )}
       </nav>
     </div>
   );

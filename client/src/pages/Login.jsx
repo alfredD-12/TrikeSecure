@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { login } from '../api';
+import { login } from '../services/api';
 
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState('');

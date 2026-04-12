@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { useApp } from '../contexts/AppContext';
-import { API_URL } from '../api';
+import { API_URL } from '../services/api';
 import '../styles/MapBackground.css';
 
 // Fix Leaflet default icon paths broken by Vite bundling

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Mail, Lock, AlertCircle, ArrowRight, Eye, EyeOff, Loader2, Sun, Moon } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
-import { login } from '../api';
+import { login } from '../services/api';
 import LangToggle from '../components/LangToggle';
 import '../styles/LoginView.css';
 

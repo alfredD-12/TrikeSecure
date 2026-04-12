@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { logout } from '../api';
+import { logout } from '../services/api';
 
 export default function Dashboard({ username, onLogout }) {
   const navigate = useNavigate();

@@ -1,128 +1,738 @@
--- Run this SQL in your MySQL database to set up the TODA schema
+-- Run this SQL in MySQL to create the updated TrikeSecure schema.
+-- This version models:
+-- 1. TODA creation reviewed by the LGU
+-- 2. Driver membership reviewed by the TODA president
+-- 3. Franchise applications reviewed by the LGU
 
 CREATE DATABASE IF NOT EXISTS trikesec;
 USE trikesec;
 
-CREATE TABLE IF NOT EXISTS users (
+SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS complaints;
+DROP TABLE IF EXISTS franchises;
+DROP TABLE IF EXISTS tricycles;
+DROP TABLE IF EXISTS ride_requests;
+DROP TABLE IF EXISTS sos_alerts;
+DROP TABLE IF EXISTS drivers;
+DROP TABLE IF EXISTS todas;
+DROP TABLE IF EXISTS user_sessions;
+DROP TABLE IF EXISTS users;
+SET FOREIGN_KEY_CHECKS = 1;
+
+DROP TRIGGER IF EXISTS trg_todas_before_insert;
+DROP TRIGGER IF EXISTS trg_todas_before_update;
+DROP TRIGGER IF EXISTS trg_drivers_before_insert;
+DROP TRIGGER IF EXISTS trg_drivers_before_update;
+DROP TRIGGER IF EXISTS trg_tricycles_before_insert;
+DROP TRIGGER IF EXISTS trg_tricycles_before_update;
+DROP TRIGGER IF EXISTS trg_franchises_before_insert;
+DROP TRIGGER IF EXISTS trg_franchises_before_update;
+DROP TRIGGER IF EXISTS trg_franchises_after_insert;
+DROP TRIGGER IF EXISTS trg_franchises_after_update;
+
+CREATE TABLE users (
   user_id INT AUTO_INCREMENT PRIMARY KEY,
   full_name VARCHAR(100) NOT NULL,
   username VARCHAR(50) NOT NULL UNIQUE,
   email VARCHAR(150) NOT NULL UNIQUE,
   password VARCHAR(255) NOT NULL,
-  role ENUM('admin','officer','driver','commuter') NOT NULL,
-  status ENUM('active','suspended') DEFAULT 'active',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+  role ENUM('lgu', 'driver', 'commuter') NOT NULL,
+  status ENUM('active', 'suspended') NOT NULL DEFAULT 'active',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Backward-compatible migration for older MySQL versions (no ADD COLUMN IF NOT EXISTS support)
-SET @email_column_exists := (
-  SELECT COUNT(*)
-  FROM INFORMATION_SCHEMA.COLUMNS
-  WHERE TABLE_SCHEMA = DATABASE()
-    AND TABLE_NAME = 'users'
-    AND COLUMN_NAME = 'email'
-);
+CREATE TABLE user_sessions (
+  session_id VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  expires INT UNSIGNED NOT NULL,
+  data MEDIUMTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin,
+  PRIMARY KEY (session_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-SET @add_email_sql := IF(
-  @email_column_exists = 0,
-  'ALTER TABLE users ADD COLUMN email VARCHAR(150) NULL AFTER username',
-  'SELECT 1'
-);
+CREATE TABLE todas (
+  toda_id INT AUTO_INCREMENT PRIMARY KEY,
+  toda_name VARCHAR(150) NOT NULL UNIQUE,
+  toda_code VARCHAR(50) DEFAULT NULL UNIQUE,
+  president_user_id INT NOT NULL,
+  barangay VARCHAR(150) NOT NULL,
+  municipality VARCHAR(150) DEFAULT NULL,
+  route_description TEXT NOT NULL,
+  letter_of_intent_document VARCHAR(255) NOT NULL,
+  officers_list_document VARCHAR(255) NOT NULL,
+  members_list_document VARCHAR(255) DEFAULT NULL,
+  barangay_approval_document VARCHAR(255) NOT NULL,
+  status ENUM('pending', 'approved', 'rejected', 'inactive') NOT NULL DEFAULT 'pending',
+  submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at DATETIME DEFAULT NULL,
+  reviewed_by_user_id INT DEFAULT NULL,
+  review_remarks TEXT DEFAULT NULL,
+  approved_at DATETIME DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_todas_status (status),
+  KEY idx_todas_president (president_user_id),
+  CONSTRAINT fk_todas_president_user
+    FOREIGN KEY (president_user_id) REFERENCES users(user_id)
+    ON DELETE RESTRICT,
+  CONSTRAINT fk_todas_reviewed_by
+    FOREIGN KEY (reviewed_by_user_id) REFERENCES users(user_id)
+    ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-PREPARE add_email_stmt FROM @add_email_sql;
-EXECUTE add_email_stmt;
-DEALLOCATE PREPARE add_email_stmt;
-
-SET @email_unique_exists := (
-  SELECT COUNT(*)
-  FROM INFORMATION_SCHEMA.STATISTICS
-  WHERE TABLE_SCHEMA = DATABASE()
-    AND TABLE_NAME = 'users'
-    AND INDEX_NAME = 'uq_users_email'
-);
-
-SET @add_email_unique_sql := IF(
-  @email_unique_exists = 0,
-  'ALTER TABLE users ADD CONSTRAINT uq_users_email UNIQUE (email)',
-  'SELECT 1'
-);
-
-PREPARE add_email_unique_stmt FROM @add_email_unique_sql;
-EXECUTE add_email_unique_stmt;
-DEALLOCATE PREPARE add_email_unique_stmt;
-
-CREATE TABLE IF NOT EXISTS drivers (
+CREATE TABLE drivers (
   driver_id INT AUTO_INCREMENT PRIMARY KEY,
-  user_id INT NOT NULL,
+  user_id INT NOT NULL UNIQUE,
+  toda_id INT DEFAULT NULL,
+  membership_role ENUM('president', 'member') NOT NULL DEFAULT 'member',
+  membership_status ENUM('not_applied', 'pending', 'approved', 'rejected') NOT NULL DEFAULT 'not_applied',
   license_number VARCHAR(50) NOT NULL UNIQUE,
-  contact_number VARCHAR(20),
-  toda_name VARCHAR(100),
-  status ENUM('active','suspended','expired') DEFAULT 'active',
-  FOREIGN KEY (user_id) REFERENCES users(user_id)
-    ON DELETE CASCADE
-);
+  license_expiry_date DATE DEFAULT NULL,
+  contact_number VARCHAR(20) DEFAULT NULL,
+  driver_license_document VARCHAR(255) DEFAULT NULL,
+  valid_id_document VARCHAR(255) DEFAULT NULL,
+  membership_applied_at DATETIME DEFAULT NULL,
+  membership_reviewed_at DATETIME DEFAULT NULL,
+  membership_reviewed_by_user_id INT DEFAULT NULL,
+  membership_remarks TEXT DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_drivers_toda_status (toda_id, membership_status),
+  KEY idx_drivers_membership_role (membership_role),
+  CONSTRAINT fk_drivers_user
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_drivers_toda
+    FOREIGN KEY (toda_id) REFERENCES todas(toda_id)
+    ON DELETE SET NULL,
+  CONSTRAINT fk_drivers_reviewed_by
+    FOREIGN KEY (membership_reviewed_by_user_id) REFERENCES users(user_id)
+    ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS tricycles (
+CREATE TABLE tricycles (
   tricycle_id INT AUTO_INCREMENT PRIMARY KEY,
-  body_number VARCHAR(50) NOT NULL UNIQUE,
-  plate_number VARCHAR(50),
   driver_id INT NOT NULL,
-  toda_name VARCHAR(100),
-  franchise_expiry DATE,
-  qr_code_value VARCHAR(255) NOT NULL UNIQUE,
-  status ENUM('active','expired','suspended') DEFAULT 'active',
-  FOREIGN KEY (driver_id) REFERENCES drivers(driver_id)
-    ON DELETE CASCADE
-);
+  toda_id INT DEFAULT NULL,
+  body_number VARCHAR(50) DEFAULT NULL,
+  plate_number VARCHAR(50) NOT NULL,
+  make_model VARCHAR(100) DEFAULT NULL,
+  color VARCHAR(50) DEFAULT NULL,
+  engine_number VARCHAR(100) DEFAULT NULL,
+  chassis_number VARCHAR(100) DEFAULT NULL,
+  qr_code_value VARCHAR(255) DEFAULT NULL,
+  franchise_expiry DATE DEFAULT NULL,
+  status ENUM('pending', 'approved', 'rejected', 'expired', 'suspended') NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_tricycles_body_number (body_number),
+  UNIQUE KEY uq_tricycles_plate_number (plate_number),
+  UNIQUE KEY uq_tricycles_qr_code_value (qr_code_value),
+  KEY idx_tricycles_driver_status (driver_id, status),
+  KEY idx_tricycles_toda (toda_id),
+  CONSTRAINT fk_tricycles_driver
+    FOREIGN KEY (driver_id) REFERENCES drivers(driver_id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_tricycles_toda
+    FOREIGN KEY (toda_id) REFERENCES todas(toda_id)
+    ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS franchises (
+CREATE TABLE franchises (
   franchise_id INT AUTO_INCREMENT PRIMARY KEY,
   tricycle_id INT NOT NULL,
-  issue_date DATE NOT NULL,
-  expiry_date DATE NOT NULL,
-  lgu_reference_no VARCHAR(100),
-  FOREIGN KEY (tricycle_id) REFERENCES tricycles(tricycle_id)
-    ON DELETE CASCADE
-);
+  status ENUM('pending', 'approved', 'rejected', 'expired', 'revoked') NOT NULL DEFAULT 'pending',
+  toda_certificate_document VARCHAR(255) NOT NULL,
+  or_cr_document VARCHAR(255) NOT NULL,
+  insurance_document VARCHAR(255) NOT NULL,
+  issue_date DATE DEFAULT NULL,
+  expiry_date DATE DEFAULT NULL,
+  lgu_reference_no VARCHAR(100) DEFAULT NULL,
+  reviewed_at DATETIME DEFAULT NULL,
+  reviewed_by_user_id INT DEFAULT NULL,
+  remarks TEXT DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_franchises_status (status),
+  KEY idx_franchises_tricycle_status (tricycle_id, status),
+  CONSTRAINT fk_franchises_tricycle
+    FOREIGN KEY (tricycle_id) REFERENCES tricycles(tricycle_id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_franchises_reviewed_by
+    FOREIGN KEY (reviewed_by_user_id) REFERENCES users(user_id)
+    ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS complaints (
+CREATE TABLE complaints (
   complaint_id INT AUTO_INCREMENT PRIMARY KEY,
   tricycle_id INT NOT NULL,
   driver_id INT NOT NULL,
-  complaint_type VARCHAR(100),
+  complaint_type VARCHAR(100) DEFAULT NULL,
   description TEXT,
-  date_reported TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  status ENUM('pending','resolved') DEFAULT 'pending',
-  FOREIGN KEY (tricycle_id) REFERENCES tricycles(tricycle_id),
-  FOREIGN KEY (driver_id) REFERENCES drivers(driver_id)
-);
+  date_reported TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  status ENUM('pending', 'resolved') DEFAULT 'pending',
+  KEY idx_complaints_tricycle (tricycle_id),
+  KEY idx_complaints_driver (driver_id),
+  CONSTRAINT fk_complaints_tricycle
+    FOREIGN KEY (tricycle_id) REFERENCES tricycles(tricycle_id),
+  CONSTRAINT fk_complaints_driver
+    FOREIGN KEY (driver_id) REFERENCES drivers(driver_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS ride_requests (
+CREATE TABLE ride_requests (
   request_id INT AUTO_INCREMENT PRIMARY KEY,
   commuter_id INT NOT NULL,
   pickup_location VARCHAR(255) NOT NULL,
   dropoff_location VARCHAR(255) NOT NULL,
-  pickup_lat DECIMAL(10, 8),
-  pickup_lng DECIMAL(11, 8),
-  dropoff_lat DECIMAL(10, 8),
-  dropoff_lng DECIMAL(11, 8),
-  fare_amount DECIMAL(10, 2),
-  request_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  assigned_driver_id INT,
-  status ENUM('waiting','accepted','completed','cancelled') DEFAULT 'waiting',
-  FOREIGN KEY (commuter_id) REFERENCES users(user_id) ON DELETE CASCADE,
-  FOREIGN KEY (assigned_driver_id) REFERENCES drivers(driver_id)
-);
+  pickup_lat DECIMAL(10, 8) DEFAULT NULL,
+  pickup_lng DECIMAL(11, 8) DEFAULT NULL,
+  dropoff_lat DECIMAL(10, 8) DEFAULT NULL,
+  dropoff_lng DECIMAL(11, 8) DEFAULT NULL,
+  fare_amount DECIMAL(10, 2) DEFAULT NULL,
+  request_time TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  assigned_driver_id INT DEFAULT NULL,
+  status ENUM('waiting', 'accepted', 'completed', 'cancelled') DEFAULT 'waiting',
+  KEY idx_ride_requests_status (status),
+  KEY idx_ride_requests_commuter (commuter_id),
+  KEY idx_ride_requests_driver (assigned_driver_id),
+  CONSTRAINT fk_ride_requests_commuter
+    FOREIGN KEY (commuter_id) REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_ride_requests_driver
+    FOREIGN KEY (assigned_driver_id) REFERENCES drivers(driver_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
-CREATE TABLE IF NOT EXISTS sos_alerts (
+CREATE TABLE sos_alerts (
   alert_id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
-  user_role ENUM('commuter','driver') NOT NULL,
-  latitude DECIMAL(10, 8),
-  longitude DECIMAL(11, 8),
+  user_role ENUM('commuter', 'driver') NOT NULL,
+  latitude DECIMAL(10, 8) DEFAULT NULL,
+  longitude DECIMAL(11, 8) DEFAULT NULL,
   ride_id INT DEFAULT NULL,
   message TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  status ENUM('active','resolved') DEFAULT 'active',
-  FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-);
+  created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  status ENUM('active', 'resolved') DEFAULT 'active',
+  KEY idx_sos_alerts_user (user_id),
+  CONSTRAINT fk_sos_alerts_user
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+DELIMITER $$
+
+CREATE TRIGGER trg_todas_before_insert
+BEFORE INSERT ON todas
+FOR EACH ROW
+BEGIN
+  DECLARE president_role VARCHAR(20);
+  DECLARE reviewer_role VARCHAR(20);
+
+  SELECT role INTO president_role
+  FROM users
+  WHERE user_id = NEW.president_user_id
+  LIMIT 1;
+
+  IF president_role IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The selected TODA president account does not exist.';
+  END IF;
+
+  IF president_role <> 'driver' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Only driver accounts can create a TODA record.';
+  END IF;
+
+  IF NEW.reviewed_by_user_id IS NOT NULL THEN
+    SELECT role INTO reviewer_role
+    FROM users
+    WHERE user_id = NEW.reviewed_by_user_id
+    LIMIT 1;
+
+    IF reviewer_role IS NULL OR reviewer_role <> 'lgu' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Only an LGU account can review a TODA application.';
+    END IF;
+  END IF;
+
+  IF NEW.status IN ('approved', 'rejected') AND NEW.reviewed_by_user_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'A reviewed TODA application must have an LGU reviewer.';
+  END IF;
+
+  IF NEW.status IN ('approved', 'rejected') AND NEW.reviewed_at IS NULL THEN
+    SET NEW.reviewed_at = CURRENT_TIMESTAMP;
+  END IF;
+
+  IF NEW.status = 'approved' AND NEW.approved_at IS NULL THEN
+    SET NEW.approved_at = CURRENT_TIMESTAMP;
+  END IF;
+
+  IF NEW.status <> 'approved' THEN
+    SET NEW.approved_at = NULL;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_todas_before_update
+BEFORE UPDATE ON todas
+FOR EACH ROW
+BEGIN
+  DECLARE president_role VARCHAR(20);
+  DECLARE reviewer_role VARCHAR(20);
+
+  SELECT role INTO president_role
+  FROM users
+  WHERE user_id = NEW.president_user_id
+  LIMIT 1;
+
+  IF president_role IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The selected TODA president account does not exist.';
+  END IF;
+
+  IF president_role <> 'driver' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Only driver accounts can own a TODA.';
+  END IF;
+
+  IF NEW.reviewed_by_user_id IS NOT NULL THEN
+    SELECT role INTO reviewer_role
+    FROM users
+    WHERE user_id = NEW.reviewed_by_user_id
+    LIMIT 1;
+
+    IF reviewer_role IS NULL OR reviewer_role <> 'lgu' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Only an LGU account can review a TODA application.';
+    END IF;
+  END IF;
+
+  IF NEW.status IN ('approved', 'rejected') AND NEW.reviewed_by_user_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'A reviewed TODA application must have an LGU reviewer.';
+  END IF;
+
+  IF NEW.status IN ('approved', 'rejected') AND NEW.reviewed_at IS NULL THEN
+    SET NEW.reviewed_at = CURRENT_TIMESTAMP;
+  END IF;
+
+  IF NEW.status = 'approved' AND NEW.approved_at IS NULL THEN
+    SET NEW.approved_at = CURRENT_TIMESTAMP;
+  END IF;
+
+  IF NEW.status <> 'approved' THEN
+    SET NEW.approved_at = NULL;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_drivers_before_insert
+BEFORE INSERT ON drivers
+FOR EACH ROW
+BEGIN
+  DECLARE account_role VARCHAR(20);
+  DECLARE toda_status VARCHAR(20);
+  DECLARE toda_president_user_id INT;
+
+  SELECT role INTO account_role
+  FROM users
+  WHERE user_id = NEW.user_id
+  LIMIT 1;
+
+  IF account_role IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The selected driver account does not exist.';
+  END IF;
+
+  IF account_role <> 'driver' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Only users with role driver can have a driver profile.';
+  END IF;
+
+  IF NEW.membership_status IN ('pending', 'approved', 'rejected') THEN
+    IF NEW.toda_id IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'A TODA must be selected before membership can be processed.';
+    END IF;
+
+    IF NEW.driver_license_document IS NULL OR TRIM(NEW.driver_license_document) = '' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Driver membership requires a driver license document.';
+    END IF;
+
+    IF NEW.valid_id_document IS NULL OR TRIM(NEW.valid_id_document) = '' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Driver membership requires a valid ID document.';
+    END IF;
+
+    IF NEW.membership_applied_at IS NULL THEN
+      SET NEW.membership_applied_at = CURRENT_TIMESTAMP;
+    END IF;
+  END IF;
+
+  IF NEW.toda_id IS NOT NULL THEN
+    SELECT status, president_user_id
+      INTO toda_status, toda_president_user_id
+    FROM todas
+    WHERE toda_id = NEW.toda_id
+    LIMIT 1;
+
+    IF toda_status IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'The selected TODA does not exist.';
+    END IF;
+
+    IF toda_status <> 'approved' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Only approved TODAs can accept members.';
+    END IF;
+
+    IF NEW.membership_role = 'president' AND toda_president_user_id <> NEW.user_id THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'The president membership must match the registered TODA president account.';
+    END IF;
+  END IF;
+
+  IF NEW.membership_status = 'approved' AND NEW.membership_reviewed_at IS NULL THEN
+    SET NEW.membership_reviewed_at = CURRENT_TIMESTAMP;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_drivers_before_update
+BEFORE UPDATE ON drivers
+FOR EACH ROW
+BEGIN
+  DECLARE account_role VARCHAR(20);
+  DECLARE toda_status VARCHAR(20);
+  DECLARE toda_president_user_id INT;
+
+  SELECT role INTO account_role
+  FROM users
+  WHERE user_id = NEW.user_id
+  LIMIT 1;
+
+  IF account_role IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The selected driver account does not exist.';
+  END IF;
+
+  IF account_role <> 'driver' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Only users with role driver can have a driver profile.';
+  END IF;
+
+  IF NEW.membership_status IN ('pending', 'approved', 'rejected') THEN
+    IF NEW.toda_id IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'A TODA must be selected before membership can be processed.';
+    END IF;
+
+    IF NEW.driver_license_document IS NULL OR TRIM(NEW.driver_license_document) = '' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Driver membership requires a driver license document.';
+    END IF;
+
+    IF NEW.valid_id_document IS NULL OR TRIM(NEW.valid_id_document) = '' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Driver membership requires a valid ID document.';
+    END IF;
+
+    IF NEW.membership_applied_at IS NULL THEN
+      SET NEW.membership_applied_at = CURRENT_TIMESTAMP;
+    END IF;
+  END IF;
+
+  IF NEW.toda_id IS NOT NULL THEN
+    SELECT status, president_user_id
+      INTO toda_status, toda_president_user_id
+    FROM todas
+    WHERE toda_id = NEW.toda_id
+    LIMIT 1;
+
+    IF toda_status IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'The selected TODA does not exist.';
+    END IF;
+
+    IF toda_status <> 'approved' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Only approved TODAs can accept members.';
+    END IF;
+
+    IF NEW.membership_role = 'president' AND toda_president_user_id <> NEW.user_id THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'The president membership must match the registered TODA president account.';
+    END IF;
+  END IF;
+
+  IF NEW.membership_status = 'approved' AND NEW.membership_reviewed_at IS NULL THEN
+    SET NEW.membership_reviewed_at = CURRENT_TIMESTAMP;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_tricycles_before_insert
+BEFORE INSERT ON tricycles
+FOR EACH ROW
+BEGIN
+  DECLARE driver_membership_status VARCHAR(20);
+  DECLARE driver_toda_id INT;
+
+  SELECT membership_status, toda_id
+    INTO driver_membership_status, driver_toda_id
+  FROM drivers
+  WHERE driver_id = NEW.driver_id
+  LIMIT 1;
+
+  IF driver_membership_status IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The selected driver profile does not exist.';
+  END IF;
+
+  IF driver_membership_status <> 'approved' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Only approved TODA members can submit a tricycle for franchising.';
+  END IF;
+
+  IF driver_toda_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The driver must belong to an approved TODA before adding a tricycle.';
+  END IF;
+
+  IF NEW.toda_id IS NULL THEN
+    SET NEW.toda_id = driver_toda_id;
+  END IF;
+
+  IF NEW.toda_id <> driver_toda_id THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The tricycle TODA must match the driver TODA membership.';
+  END IF;
+END$$
+
+CREATE TRIGGER trg_tricycles_before_update
+BEFORE UPDATE ON tricycles
+FOR EACH ROW
+BEGIN
+  DECLARE driver_membership_status VARCHAR(20);
+  DECLARE driver_toda_id INT;
+
+  SELECT membership_status, toda_id
+    INTO driver_membership_status, driver_toda_id
+  FROM drivers
+  WHERE driver_id = NEW.driver_id
+  LIMIT 1;
+
+  IF driver_membership_status IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The selected driver profile does not exist.';
+  END IF;
+
+  IF driver_membership_status <> 'approved' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Only approved TODA members can keep a tricycle record in the franchise flow.';
+  END IF;
+
+  IF driver_toda_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The driver must belong to an approved TODA before updating a tricycle.';
+  END IF;
+
+  IF NEW.toda_id IS NULL THEN
+    SET NEW.toda_id = driver_toda_id;
+  END IF;
+
+  IF NEW.toda_id <> driver_toda_id THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The tricycle TODA must match the driver TODA membership.';
+  END IF;
+END$$
+
+CREATE TRIGGER trg_franchises_before_insert
+BEFORE INSERT ON franchises
+FOR EACH ROW
+BEGIN
+  DECLARE linked_driver_id INT;
+  DECLARE driver_membership_status VARCHAR(20);
+  DECLARE reviewer_role VARCHAR(20);
+
+  SELECT driver_id
+    INTO linked_driver_id
+  FROM tricycles
+  WHERE tricycle_id = NEW.tricycle_id
+  LIMIT 1;
+
+  IF linked_driver_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The selected tricycle does not exist.';
+  END IF;
+
+  SELECT membership_status
+    INTO driver_membership_status
+  FROM drivers
+  WHERE driver_id = linked_driver_id
+  LIMIT 1;
+
+  IF driver_membership_status <> 'approved' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Only approved TODA members can apply for a franchise.';
+  END IF;
+
+  IF NEW.reviewed_by_user_id IS NOT NULL THEN
+    SELECT role
+      INTO reviewer_role
+    FROM users
+    WHERE user_id = NEW.reviewed_by_user_id
+    LIMIT 1;
+
+    IF reviewer_role IS NULL OR reviewer_role <> 'lgu' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Only an LGU account can review a franchise application.';
+    END IF;
+  END IF;
+
+  IF NEW.status IN ('approved', 'rejected') AND NEW.reviewed_by_user_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'A reviewed franchise application must have an LGU reviewer.';
+  END IF;
+
+  IF NEW.status = 'approved' THEN
+    IF NEW.issue_date IS NULL OR NEW.expiry_date IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'An approved franchise must have issue and expiry dates.';
+    END IF;
+
+    IF NEW.expiry_date <= NEW.issue_date THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Franchise expiry must be later than the issue date.';
+    END IF;
+
+    IF NEW.lgu_reference_no IS NULL OR TRIM(NEW.lgu_reference_no) = '' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'An approved franchise must have an LGU reference number.';
+    END IF;
+  END IF;
+
+  IF NEW.status IN ('approved', 'rejected') AND NEW.reviewed_at IS NULL THEN
+    SET NEW.reviewed_at = CURRENT_TIMESTAMP;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_franchises_before_update
+BEFORE UPDATE ON franchises
+FOR EACH ROW
+BEGIN
+  DECLARE linked_driver_id INT;
+  DECLARE driver_membership_status VARCHAR(20);
+  DECLARE reviewer_role VARCHAR(20);
+
+  SELECT driver_id
+    INTO linked_driver_id
+  FROM tricycles
+  WHERE tricycle_id = NEW.tricycle_id
+  LIMIT 1;
+
+  IF linked_driver_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'The selected tricycle does not exist.';
+  END IF;
+
+  SELECT membership_status
+    INTO driver_membership_status
+  FROM drivers
+  WHERE driver_id = linked_driver_id
+  LIMIT 1;
+
+  IF driver_membership_status <> 'approved' THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Only approved TODA members can keep a franchise application.';
+  END IF;
+
+  IF NEW.reviewed_by_user_id IS NOT NULL THEN
+    SELECT role
+      INTO reviewer_role
+    FROM users
+    WHERE user_id = NEW.reviewed_by_user_id
+    LIMIT 1;
+
+    IF reviewer_role IS NULL OR reviewer_role <> 'lgu' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Only an LGU account can review a franchise application.';
+    END IF;
+  END IF;
+
+  IF NEW.status IN ('approved', 'rejected') AND NEW.reviewed_by_user_id IS NULL THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'A reviewed franchise application must have an LGU reviewer.';
+  END IF;
+
+  IF NEW.status = 'approved' THEN
+    IF NEW.issue_date IS NULL OR NEW.expiry_date IS NULL THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'An approved franchise must have issue and expiry dates.';
+    END IF;
+
+    IF NEW.expiry_date <= NEW.issue_date THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Franchise expiry must be later than the issue date.';
+    END IF;
+
+    IF NEW.lgu_reference_no IS NULL OR TRIM(NEW.lgu_reference_no) = '' THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'An approved franchise must have an LGU reference number.';
+    END IF;
+  END IF;
+
+  IF NEW.status IN ('approved', 'rejected') AND NEW.reviewed_at IS NULL THEN
+    SET NEW.reviewed_at = CURRENT_TIMESTAMP;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_franchises_after_insert
+AFTER INSERT ON franchises
+FOR EACH ROW
+BEGIN
+  IF NEW.status = 'approved' THEN
+    UPDATE tricycles
+    SET status = 'approved',
+        franchise_expiry = NEW.expiry_date
+    WHERE tricycle_id = NEW.tricycle_id;
+  ELSEIF NEW.status = 'rejected' THEN
+    UPDATE tricycles
+    SET status = 'rejected',
+        franchise_expiry = NULL
+    WHERE tricycle_id = NEW.tricycle_id;
+  ELSE
+    UPDATE tricycles
+    SET status = 'pending'
+    WHERE tricycle_id = NEW.tricycle_id;
+  END IF;
+END$$
+
+CREATE TRIGGER trg_franchises_after_update
+AFTER UPDATE ON franchises
+FOR EACH ROW
+BEGIN
+  IF NEW.status = 'approved' THEN
+    UPDATE tricycles
+    SET status = 'approved',
+        franchise_expiry = NEW.expiry_date
+    WHERE tricycle_id = NEW.tricycle_id;
+  ELSEIF NEW.status = 'rejected' THEN
+    UPDATE tricycles
+    SET status = 'rejected',
+        franchise_expiry = NULL
+    WHERE tricycle_id = NEW.tricycle_id;
+  ELSEIF NEW.status = 'expired' THEN
+    UPDATE tricycles
+    SET status = 'expired',
+        franchise_expiry = NEW.expiry_date
+    WHERE tricycle_id = NEW.tricycle_id;
+  ELSEIF NEW.status = 'revoked' THEN
+    UPDATE tricycles
+    SET status = 'suspended',
+        franchise_expiry = NULL
+    WHERE tricycle_id = NEW.tricycle_id;
+  ELSE
+    UPDATE tricycles
+    SET status = 'pending'
+    WHERE tricycle_id = NEW.tricycle_id;
+  END IF;
+END$$
+
+DELIMITER ;

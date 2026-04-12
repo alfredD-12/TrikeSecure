@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { translations } from '../utils/translations';
-import { getMe } from '../api';
+import { getMe } from '../services/api';
 
 const AppContext = createContext(null);
 
