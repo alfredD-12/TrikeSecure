@@ -12,7 +12,7 @@
 }
 
 body.dark-mode #map-container {
-  filter: brightness(1.25) contrast(0.95) saturate(1.05);
+  filter: brightness(1.02) contrast(1.04) saturate(1.02);
 }
 
 /* ─── Custom Markers ─────────────────────────────────────── */

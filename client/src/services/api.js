@@ -31,7 +31,7 @@ async function parseResponse(res) {
   if (contentType.includes('application/json')) {
     const data = await res.json().catch(() => ({ message: 'Invalid JSON response from server.' }));
     if (!res.ok) {
-      return { message: data?.message || `Request failed with status ${res.status}.` };
+      return { ...data, message: data?.message || `Request failed with status ${res.status}.` };
     }
     return data;
   }
@@ -91,14 +91,22 @@ export async function getDriverByQr(qrValue) {
   return apiFetch(`/scan/qr/${encoded}`);
 }
 
-export async function bookRide(pickup, dropoff, pickupLat = null, pickupLng = null) {
+export async function bookRide(pickup, dropoff, pickupLat = null, pickupLng = null, dropoffLat = null, dropoffLng = null) {
   const res = await fetch(`${API_URL}/rides/request`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ pickup, dropoff, pickupLat, pickupLng }),
+    body: JSON.stringify({ pickup, dropoff, pickupLat, pickupLng, dropoffLat, dropoffLng }),
   });
   return parseResponse(res);
+}
+
+export async function getActiveRide() {
+  return apiFetch('/rides/active');
+}
+
+export async function getRideStatus(requestId) {
+  return apiFetch(`/rides/${requestId}/status`);
 }
 
 export async function cancelRide(requestId) {
@@ -107,8 +115,38 @@ export async function cancelRide(requestId) {
   });
 }
 
+export async function markRideArrived(requestId) {
+  return apiFetch(`/rides/${requestId}/arrive`, {
+    method: 'POST',
+  });
+}
+
+export async function startRide(requestId) {
+  return apiFetch(`/rides/${requestId}/start`, {
+    method: 'POST',
+  });
+}
+
+export async function completeRide(requestId) {
+  return apiFetch(`/rides/${requestId}/complete`, {
+    method: 'POST',
+  });
+}
+
+export async function updateDriverRideLocation(requestId, location) {
+  return apiFetch(`/rides/${requestId}/driver-location`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(location),
+  });
+}
+
 export async function getDriverProfile() {
   return apiFetch('/rides/driver-profile');
+}
+
+export async function getFuelPrices() {
+  return apiFetch('/fuel/prices');
 }
 
 export async function getDriverOnboarding() {

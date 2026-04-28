@@ -14,6 +14,7 @@ const driverRoutes = require('./routes/driver');
 const scanRoutes = require('./routes/scan');
 const ridesRoutes = require('./routes/rides');
 const sosRoutes = require('./routes/sos');
+const fuelRoutes = require('./routes/fuel');
 
 const app = express();
 const MySQLStore = MySQLStoreFactory(session);
@@ -97,15 +98,19 @@ app.use(helmet({
 app.use(express.json({ limit: '10kb' }));
 app.use('/uploads', express.static(uploadsRoot));
 
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: 'Too many requests. Please try again later.' },
-});
+const enableApiRateLimit = config.isProduction || process.env.ENABLE_API_RATE_LIMIT === 'true';
 
-app.use('/api', apiLimiter);
+if (enableApiRateLimit) {
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too many requests. Please try again later.' },
+  });
+
+  app.use('/api', apiLimiter);
+}
 
 app.use(session({
   name: 'sid',
@@ -129,6 +134,7 @@ app.use('/api/driver', driverRoutes);
 app.use('/api/scan', scanRoutes);
 app.use('/api/rides', ridesRoutes);
 app.use('/api/sos', sosRoutes);
+app.use('/api/fuel', fuelRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -32,6 +32,8 @@ export function AppProvider({ children }) {
   const [liveLocation, setLiveLocation] = useState(null);  // { lat, lng, accuracy } from watchPosition
   const [isMapMoving, setIsMapMoving] = useState(false);
   const [pendingRides, setPendingRides] = useState([]);
+  const [activeDriverRide, setActiveDriverRide] = useState(null);
+  const [activeCommuterRide, setActiveCommuterRide] = useState(null);
   // Initialize dynamicDict from localStorage
   const [dynamicDict, setDynamicDict] = useState(() => {
     try {
@@ -110,6 +112,10 @@ export function AppProvider({ children }) {
   }, []);
 
   const toggleDarkMode = useCallback(() => setDarkMode(v => !v), []);
+  const resetThemeForLogout = useCallback(() => {
+    setDarkMode(false);
+    localStorage.setItem('darkMode', 'disabled');
+  }, []);
   const toggleLanguage = useCallback(() => setLang(v => (v === 'en' ? 'tl' : 'en')), []);
 
   // Clear fetch tracker when language changes so translations re-fetch
@@ -152,7 +158,7 @@ export function AppProvider({ children }) {
   }, [lang, dynamicDict]);
 
   return (
-    <AppContext.Provider value={{ lang, darkMode, setDarkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, dynamicDict, setDynamicDict, liveLocation, setLiveLocation, isMapMoving, setIsMapMoving, pendingRides, setPendingRides }}>
+    <AppContext.Provider value={{ lang, darkMode, setDarkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, resetThemeForLogout, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, dynamicDict, setDynamicDict, liveLocation, setLiveLocation, isMapMoving, setIsMapMoving, pendingRides, setPendingRides, activeDriverRide, setActiveDriverRide, activeCommuterRide, setActiveCommuterRide }}>
       {children}
     </AppContext.Provider>
   );

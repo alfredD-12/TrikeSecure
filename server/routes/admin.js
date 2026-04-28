@@ -39,7 +39,7 @@ router.get('/overview', async (_req, res) => {
         (SELECT COUNT(*) FROM franchises WHERE status = 'pending') AS pendingFranchises,
         (SELECT COUNT(*) FROM franchises WHERE status = 'approved') AS approvedFranchises,
         (SELECT COUNT(*) FROM tricycles WHERE status = 'approved') AS activeTricycles,
-        (SELECT COUNT(*) FROM ride_requests WHERE status IN ('waiting', 'accepted')) AS liveRides,
+        (SELECT COUNT(*) FROM ride_requests WHERE status IN ('waiting', 'accepted', 'arrived', 'in_progress')) AS liveRides,
         (SELECT COUNT(*) FROM ride_requests WHERE DATE(request_time) = CURDATE()) AS todaysRides,
         (SELECT COUNT(*) FROM complaints WHERE status = 'pending') AS openComplaints
     `);

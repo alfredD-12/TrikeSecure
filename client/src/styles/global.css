@@ -50,13 +50,37 @@ body.dark-mode .text-gray-900  { color: #f3f4f6 !important; }
 body.dark-mode .text-gray-800  { color: #f3f4f6 !important; }
 body.dark-mode .text-gray-700  { color: #e5e7eb !important; }
 body.dark-mode .text-gray-600  { color: #d1d5db !important; }
-body.dark-mode .text-gray-500  { color: #9ca3af !important; }
-body.dark-mode .text-gray-400  { color: #9ca3af !important; }
+body.dark-mode .text-gray-500  { color: #b8c0cc !important; }
+body.dark-mode .text-gray-400  { color: #cbd5e1 !important; }
+
+/* Slate text utilities used in newer components */
+body.dark-mode .text-slate-900 { color: #f8fafc !important; }
+body.dark-mode .text-slate-800 { color: #f1f5f9 !important; }
+body.dark-mode .text-slate-700 { color: #e2e8f0 !important; }
+body.dark-mode .text-slate-600 { color: #cbd5e1 !important; }
+body.dark-mode .text-slate-500 { color: #94a3b8 !important; }
+body.dark-mode .text-slate-400 { color: #94a3b8 !important; }
 
 /* Tailwind background utilities → dark equivalents */
 body.dark-mode .bg-white       { background-color: #374151 !important; }
 body.dark-mode .bg-gray-50     { background-color: #1f2937 !important; }
 body.dark-mode .bg-gray-100    { background-color: #374151 !important; }
+
+/* Translucent utility classes should also shift to dark surfaces */
+body.dark-mode .bg-white\/95,
+body.dark-mode .bg-white\/92,
+body.dark-mode .bg-white\/90,
+body.dark-mode .bg-white\/85,
+body.dark-mode .bg-white\/80,
+body.dark-mode .bg-white\/78 {
+  background-color: rgba(30, 41, 59, 0.88) !important;
+}
+body.dark-mode .bg-gray-50\/80,
+body.dark-mode .bg-gray-100\/50 {
+  background-color: rgba(30, 41, 59, 0.78) !important;
+}
+body.dark-mode .bg-slate-50,
+body.dark-mode .bg-slate-100 { background-color: #1f2937 !important; }
 
 /* Soft-coloured accent backgrounds */
 body.dark-mode .bg-blue-50     { background-color: #1e3a5f !important; }
@@ -76,6 +100,11 @@ body.dark-mode .border-gray-200 { border-color: #4b5563 !important; }
 body.dark-mode .border-gray-50  { border-color: #374151 !important; }
 body.dark-mode .border-blue-100 { border-color: #1e3a5f !important; }
 body.dark-mode .border-red-100  { border-color: #4b1818 !important; }
+body.dark-mode .border-slate-200 { border-color: #475569 !important; }
+body.dark-mode .border-white\/70,
+body.dark-mode .border-white\/60,
+body.dark-mode .border-white\/50,
+body.dark-mode .border-white\/40 { border-color: rgba(148, 163, 184, 0.28) !important; }
 
 /* Misc backgrounds */
 body.dark-mode .bg-gray-200     { background-color: #4b5563 !important; }
@@ -94,5 +123,5 @@ body.dark-mode select {
   border-color: #4b5563 !important;
 }
 body.dark-mode input::placeholder,
-body.dark-mode textarea::placeholder { color: #6b7280 !important; }
+body.dark-mode textarea::placeholder { color: #94a3b8 !important; }
 body.dark-mode select option { background-color: #374151; color: #f3f4f6; }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import { useApp } from '../contexts/AppContext';
@@ -116,7 +116,7 @@ const destIcon = L.divIcon({
 
 // Draws OSRM road route between pickup and destination
 function RouteLayer() {
-  const { userPickup, destinationPin } = useApp();
+  const { userPickup, destinationPin, activeCommuterRide, activeDriverRide } = useApp();
   const map = useMap();
   const polylineRef = useRef(null);
 
@@ -126,7 +126,7 @@ function RouteLayer() {
       polylineRef.current.remove();
       polylineRef.current = null;
     }
-    if (!userPickup || !destinationPin) return;
+    if (activeCommuterRide || activeDriverRide || !userPickup || !destinationPin) return;
 
     const url = `https://router.project-osrm.org/route/v1/driving/` +
       `${userPickup.lng},${userPickup.lat};${destinationPin.lng},${destinationPin.lat}` +
@@ -154,7 +154,7 @@ function RouteLayer() {
     return () => {
       if (polylineRef.current) { polylineRef.current.remove(); polylineRef.current = null; }
     };
-  }, [userPickup, destinationPin, map]);
+  }, [userPickup, destinationPin, activeCommuterRide, activeDriverRide, map]);
 
   return null;
 }
@@ -195,22 +195,30 @@ const commuterRequestIcon = L.divIcon({
 
 // Tile layer that reacts to dark mode changes
 function DarkAwareTileLayer({ darkMode }) {
-  const tileUrl = darkMode
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  if (darkMode) {
+    return (
+      <TileLayer
+        key="alidade-smooth-dark"
+        url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
+        maxZoom={20}
+        minZoom={3}
+        attribution="&copy; Stadia Maps &copy; OpenMapTiles &copy; OpenStreetMap contributors"
+      />
+    );
+  }
 
   return (
     <TileLayer
-      key={tileUrl}
-      url={tileUrl}
+      key="voyager"
+      url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
       maxZoom={20}
       minZoom={3}
-      attribution="&copy; OpenStreetMap contributors"
+      attribution="&copy; OpenStreetMap contributors &copy; CARTO"
     />
   );
 }
 
-// Google Maps-style real-time blue dot for commuter
+// Google Maps-style real-time blue dot for the current account
 function UserLocationDot() {
   const { view, setLiveLocation } = useApp();
   const map = useMap();
@@ -218,7 +226,7 @@ function UserLocationDot() {
   const watchIdRef = useRef(null);
 
   useEffect(() => {
-    if (view !== 'commuter') return;
+    if (!['commuter', 'driver'].includes(view)) return;
     if (!navigator.geolocation) return;
 
     const dotHtml = `
@@ -300,7 +308,7 @@ function FlyToPoint() {
 
 // Self-contained commuter-request pin layer with accept action
 function CommuterRequestMarkers() {
-  const { pendingRides, setPendingRides } = useApp();
+  const { pendingRides, setPendingRides, activeDriverRide, setActiveDriverRide } = useApp();
   const [acceptingId, setAcceptingId] = useState(null);
   const [errorId, setErrorId] = useState(null);
 
@@ -313,6 +321,10 @@ function CommuterRequestMarkers() {
         credentials: 'include',
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data?.ride) {
+          setActiveDriverRide(data.ride);
+        }
         // Optimistic removal — next poll from DriverView will confirm
         setPendingRides(prev => prev.filter(r => r.request_id !== rideId));
       } else {
@@ -329,12 +341,22 @@ function CommuterRequestMarkers() {
 
   const popupStyle = { fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px 2px', minWidth: '200px' };
 
+  if (activeDriverRide) {
+    return null;
+  }
+
   return (
     <>
       {pendingRides
         .filter(r => r.pickup_lat != null && r.pickup_lng != null)
         .map(r => (
-          <Marker key={r.request_id} position={[r.pickup_lat, r.pickup_lng]} icon={commuterRequestIcon}>
+          <Fragment key={r.request_id}>
+          <Circle
+            center={[r.pickup_lat, r.pickup_lng]}
+            radius={180}
+            pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.12, weight: 2, opacity: 0.45 }}
+          />
+          <Marker position={[r.pickup_lat, r.pickup_lng]} icon={commuterRequestIcon}>
             <Popup>
               <div style={popupStyle}>
                 <div style={{ fontWeight: 700, color: '#ea580c', fontSize: '13px', marginBottom: '6px' }}>🙋 Ride Request</div>
@@ -343,6 +365,9 @@ function CommuterRequestMarkers() {
                 {r.dropoff_location && (
                   <div style={{ color: '#6b7280', fontSize: '12px', marginTop: '2px' }}>🏁 {r.dropoff_location}</div>
                 )}
+                <div style={{ color: '#9ca3af', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
+                  Exact pickup unlocks after accepting the ride.
+                </div>
                 <div style={{ marginTop: '10px', display: 'flex', gap: '6px' }}>
                   <button
                     onClick={() => acceptFromMap(r.request_id)}
@@ -365,15 +390,180 @@ function CommuterRequestMarkers() {
               </div>
             </Popup>
           </Marker>
+          </Fragment>
         ))
       }
     </>
   );
 }
 
+function getActiveMapRide(view, activeDriverRide, activeCommuterRide) {
+  return view === 'driver' ? activeDriverRide : activeCommuterRide;
+}
+
+function ActiveRidePickupMarker() {
+  const { view, activeDriverRide, activeCommuterRide } = useApp();
+  const ride = getActiveMapRide(view, activeDriverRide, activeCommuterRide);
+  const isDriver = view === 'driver';
+
+  const canShowPickup = ride
+    && ride.pickupLat != null
+    && ride.pickupLng != null
+    && (!isDriver || ['accepted', 'arrived'].includes(ride.status));
+
+  if (!canShowPickup) {
+    return null;
+  }
+
+  return (
+    <Marker position={[ride.pickupLat, ride.pickupLng]} icon={pickupIcon}>
+      <Popup>
+        <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '190px' }}>
+          <div style={{ fontWeight: 700, color: '#2563eb', fontSize: '13px', marginBottom: '2px' }}>
+            {isDriver ? 'Exact Pickup' : 'Pickup Point'}
+          </div>
+          <div style={{ color: '#1f2937', fontSize: '13px', fontWeight: 700 }}>{ride.commuter?.fullName || 'Commuter'}</div>
+          <div style={{ color: '#6b7280', fontSize: '12px', marginTop: '4px' }}>{ride.pickupLocation || 'Pickup location'}</div>
+          {isDriver && (
+            <div style={{ color: '#9ca3af', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
+              Shared only while pickup is active.
+            </div>
+          )}
+        </div>
+      </Popup>
+    </Marker>
+  );
+}
+
+function ActiveRideDropoffMarker() {
+  const { view, activeDriverRide, activeCommuterRide } = useApp();
+  const ride = getActiveMapRide(view, activeDriverRide, activeCommuterRide);
+
+  if (!ride || ride.dropoffLat == null || ride.dropoffLng == null) {
+    return null;
+  }
+
+  return (
+    <Marker position={[ride.dropoffLat, ride.dropoffLng]} icon={destIcon}>
+      <Popup>
+        <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '190px' }}>
+          <div style={{ fontWeight: 700, color: '#dc2626', fontSize: '13px', marginBottom: '2px' }}>Dropoff</div>
+          <div style={{ color: '#6b7280', fontSize: '12px' }}>{ride.dropoffLocation || 'Destination'}</div>
+        </div>
+      </Popup>
+    </Marker>
+  );
+}
+
+function ActiveRideDriverMarker() {
+  const { view, activeCommuterRide } = useApp();
+  const location = activeCommuterRide?.driverLocation;
+
+  if (view !== 'commuter' || location?.lat == null || location?.lng == null) {
+    return null;
+  }
+
+  return (
+    <Marker position={[location.lat, location.lng]} icon={trikeIcon}>
+      <Popup>
+        <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '180px' }}>
+          <div style={{ fontWeight: 700, color: '#16a34a', fontSize: '13px', marginBottom: '2px' }}>Driver Location</div>
+          <div style={{ color: '#1f2937', fontSize: '13px', fontWeight: 700 }}>
+            {activeCommuterRide.driver?.fullName || 'Your driver'}
+          </div>
+          <div style={{ color: '#6b7280', fontSize: '11px', marginTop: '4px' }}>Updating while your ride is active.</div>
+        </div>
+      </Popup>
+    </Marker>
+  );
+}
+
+function ActiveRideRouteLayer() {
+  const { view, activeDriverRide, activeCommuterRide, liveLocation } = useApp();
+  const map = useMap();
+  const polylineRef = useRef(null);
+  const lastFitKeyRef = useRef(null);
+  const ride = getActiveMapRide(view, activeDriverRide, activeCommuterRide);
+
+  const isDriver = view === 'driver';
+  const routeStart = (() => {
+    if (!ride) return null;
+    if (isDriver && ['accepted', 'arrived'].includes(ride.status) && liveLocation) {
+      return liveLocation;
+    }
+    if (isDriver && ride.status === 'in_progress' && liveLocation) {
+      return liveLocation;
+    }
+    if (ride.pickupLat != null && ride.pickupLng != null) {
+      return { lat: ride.pickupLat, lng: ride.pickupLng };
+    }
+    return null;
+  })();
+
+  const routeEnd = (() => {
+    if (!ride) return null;
+    if (isDriver && ['accepted', 'arrived'].includes(ride.status)) {
+      return ride.pickupLat != null && ride.pickupLng != null
+        ? { lat: ride.pickupLat, lng: ride.pickupLng }
+        : null;
+    }
+    return ride.dropoffLat != null && ride.dropoffLng != null
+      ? { lat: ride.dropoffLat, lng: ride.dropoffLng }
+      : null;
+  })();
+
+  useEffect(() => {
+    if (polylineRef.current) {
+      polylineRef.current.remove();
+      polylineRef.current = null;
+    }
+
+    if (!ride || !routeStart || !routeEnd) {
+      return undefined;
+    }
+
+    const url = `https://router.project-osrm.org/route/v1/driving/` +
+      `${routeStart.lng},${routeStart.lat};${routeEnd.lng},${routeEnd.lat}` +
+      `?overview=full&geometries=geojson`;
+
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const coords = data?.routes?.[0]?.geometry?.coordinates;
+        if (!coords) return;
+
+        const latLngs = coords.map(([lng, lat]) => [lat, lng]);
+        polylineRef.current = L.polyline(latLngs, {
+          color: isDriver && ['accepted', 'arrived'].includes(ride.status) ? '#2563eb' : '#16a34a',
+          weight: 6,
+          opacity: 0.9,
+          lineJoin: 'round',
+          lineCap: 'round',
+        }).addTo(map);
+
+        const fitKey = `${view}-${ride.requestId}-${ride.status}`;
+        if (lastFitKeyRef.current !== fitKey) {
+          lastFitKeyRef.current = fitKey;
+          map.fitBounds(polylineRef.current.getBounds(), { padding: [70, 70] });
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      if (polylineRef.current) {
+        polylineRef.current.remove();
+        polylineRef.current = null;
+      }
+    };
+  }, [view, ride, routeStart, routeEnd, isDriver, map]);
+
+  return null;
+}
+
 export default function MapBackground({ mapRef }) {
-  const { darkMode, userPickup, destinationPin, pinTarget, view, pendingRides } = useApp();
+  const { darkMode, userPickup, destinationPin, pinTarget, view, activeDriverRide, activeCommuterRide } = useApp();
   const isCommuter = view === 'commuter';
+  const hasActiveMapRide = Boolean(getActiveMapRide(view, activeDriverRide, activeCommuterRide));
 
   return (
     <div id="map-container" style={{ cursor: pinTarget ? 'crosshair' : 'grab' }}>
@@ -396,7 +586,7 @@ export default function MapBackground({ mapRef }) {
         <UserLocationDot />
         <DarkAwareTileLayer darkMode={darkMode} />
         {/* Destination marker — red drop pin */}
-        {destinationPin && (
+        {destinationPin && !hasActiveMapRide && (
           <Marker position={[destinationPin.lat, destinationPin.lng]} icon={destIcon}>
             <Popup>
               <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '160px' }}>
@@ -408,7 +598,7 @@ export default function MapBackground({ mapRef }) {
         )}
         {/* User pickup marker — only shown when pickup is set AND was NOT from GPS
            (GPS pickups are already visualized by the live UserLocationDot blue dot) */}
-        {userPickup && !userPickup.fromGps && (
+        {userPickup && !userPickup.fromGps && !hasActiveMapRide && (
           <Marker position={[userPickup.lat, userPickup.lng]} icon={pickupIcon}>
             <Popup>
               <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '160px' }}>
@@ -419,7 +609,7 @@ export default function MapBackground({ mapRef }) {
           </Marker>
         )}
         {/* Trike terminal marker — only shown in driver view */}
-        {!isCommuter && (
+        {!isCommuter && !activeDriverRide && (
           <Marker position={DEFAULT_CENTER} icon={trikeIcon}>
           <Popup>
             <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '180px' }}>
@@ -437,6 +627,10 @@ export default function MapBackground({ mapRef }) {
         )}
         {/* Commuter request markers — pulsing orange pins, only in driver view */}
         {!isCommuter && <CommuterRequestMarkers />}
+        <ActiveRideRouteLayer />
+        <ActiveRidePickupMarker />
+        <ActiveRideDropoffMarker />
+        <ActiveRideDriverMarker />
       </MapContainer>
     </div>
   );

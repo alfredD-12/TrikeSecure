@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Compass, User, Wallet, Route, CheckCircle2,
   FileText, History, LogOut, Loader2, MapPin,
-  Clock, AlertCircle, Phone, Users, BadgeCheck, Shield, ChevronRight
+  Clock, AlertCircle, Phone, Users, BadgeCheck, Shield, ChevronRight,
+  Fuel, ExternalLink, RefreshCw, Navigation
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import Header from '../components/Header';
@@ -15,12 +16,24 @@ import {
   logout,
   API_URL,
   getDriverProfile,
+  getFuelPrices,
+  getActiveRide,
+  markRideArrived,
+  startRide,
+  completeRide,
+  updateDriverRideLocation,
   getApprovedDriverTodas,
   getNasugbuBarangays,
   submitDriverMembershipApplication,
   submitDriverTodaApplication,
   submitDriverFranchiseApplication,
 } from '../services/api';
+import {
+  googleMapsDirectionsUrl,
+  hasCoords,
+  ridePoint,
+  travelSummary,
+} from '../utils/rideMetrics';
 
 function statusChip(value) {
   const tone = String(value || 'unknown').toLowerCase();
@@ -49,8 +62,231 @@ function summaryCard(icon, label, value, accentClass) {
   );
 }
 
+function formatFuelPrice(value) {
+  return Number.isFinite(Number(value)) ? `P${Number(value).toFixed(2)}/L` : '--';
+}
+
+function FuelPriceCard({ snapshot, loading, error, onRefresh }) {
+  const sourceUrl = snapshot?.sourceUrl || 'https://gaswatchph.com/';
+  const labelDate = snapshot?.asOf || snapshot?.week || 'latest available';
+
+  return (
+    <div className="v-anim v-anim--3 mb-5 rounded-[26px] border border-emerald-100 bg-white/95 p-4 shadow-[0_16px_45px_rgba(15,23,42,0.08)]">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50">
+            <Fuel size={20} className="text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-600">Fuel Prices</p>
+            <p className="text-xs font-bold text-gray-500">GasWatch PH, {labelDate}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-50 text-gray-500 ring-1 ring-gray-100 transition hover:bg-gray-100 disabled:opacity-60"
+          title="Refresh fuel prices"
+        >
+          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {error ? (
+        <div className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
+          {error}
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-gray-50 px-3 py-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Avg Diesel</p>
+              <p className="mt-1 text-lg font-black text-gray-900">{loading ? '--' : formatFuelPrice(snapshot?.average?.diesel)}</p>
+            </div>
+            <div className="rounded-2xl bg-gray-50 px-3 py-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Avg Unleaded</p>
+              <p className="mt-1 text-lg font-black text-gray-900">{loading ? '--' : formatFuelPrice(snapshot?.average?.unleaded)}</p>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+            <div className="rounded-2xl bg-emerald-50 px-3 py-2">
+              <p className="font-black text-emerald-700">{loading ? '--' : formatFuelPrice(snapshot?.cheapest?.diesel?.price)}</p>
+              <p className="font-bold text-emerald-600">Cheapest diesel{snapshot?.cheapest?.diesel?.brand ? `: ${snapshot.cheapest.diesel.brand}` : ''}</p>
+            </div>
+            <div className="rounded-2xl bg-blue-50 px-3 py-2">
+              <p className="font-black text-blue-700">{loading ? '--' : formatFuelPrice(snapshot?.cheapest?.unleaded?.price)}</p>
+              <p className="font-bold text-blue-600">Cheapest unleaded{snapshot?.cheapest?.unleaded?.brand ? `: ${snapshot.cheapest.unleaded.brand}` : ''}</p>
+            </div>
+          </div>
+        </>
+      )}
+
+      <a
+        href={sourceUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-3 inline-flex items-center gap-1.5 text-xs font-black text-emerald-700"
+      >
+        View GasWatchPH <ExternalLink size={12} />
+      </a>
+    </div>
+  );
+}
+
+const DRIVER_RIDE_STATUS_META = {
+  accepted: {
+    label: 'Accepted',
+    title: 'Head to pickup',
+    message: 'Navigate to the commuter and tap arrived when you reach the pickup point.',
+    action: 'Arrived at Pickup',
+    tone: 'bg-blue-100 text-blue-700',
+  },
+  arrived: {
+    label: 'Arrived',
+    title: 'Waiting at pickup',
+    message: 'Let the commuter board, then start the ride.',
+    action: 'Start Ride',
+    tone: 'bg-amber-100 text-amber-700',
+  },
+  in_progress: {
+    label: 'In Progress',
+    title: 'Ride in progress',
+    message: 'Drive to the dropoff and complete the ride when the trip is done.',
+    action: 'Complete Ride',
+    tone: 'bg-green-100 text-green-700',
+  },
+};
+
+const DRIVER_RIDE_STEPS = [
+  { id: 'accepted', label: 'Accepted' },
+  { id: 'arrived', label: 'Arrived' },
+  { id: 'in_progress', label: 'In Ride' },
+  { id: 'completed', label: 'Done' },
+];
+
+function RideTimeline({ status }) {
+  const currentIndex = Math.max(0, DRIVER_RIDE_STEPS.findIndex((step) => step.id === status));
+
+  return (
+    <div className="mb-3 grid grid-cols-4 gap-1.5">
+      {DRIVER_RIDE_STEPS.map((step, index) => {
+        const isDone = index <= currentIndex;
+        return (
+          <div key={step.id} className="min-w-0">
+            <div className={`h-1.5 rounded-full ${isDone ? 'bg-green-500' : 'bg-gray-200'}`} />
+            <p className={`mt-1 truncate text-[9px] font-black uppercase ${isDone ? 'text-green-700' : 'text-gray-400'}`}>
+              {step.label}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MetricBox({ label, value }) {
+  return (
+    <div className="rounded-2xl bg-white px-3 py-2 ring-1 ring-gray-100">
+      <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">{label}</p>
+      <p className="mt-0.5 text-sm font-black text-gray-900">{value}</p>
+    </div>
+  );
+}
+
+function DriverActiveRideCard({ ride, updating, onAdvance, onFocusTarget, liveLocation }) {
+  const meta = DRIVER_RIDE_STATUS_META[ride?.status] || DRIVER_RIDE_STATUS_META.accepted;
+  const focusTarget = ride?.status === 'in_progress' ? 'dropoff' : 'pickup';
+  const targetPoint = ridePoint(ride, focusTarget);
+  const originPoint = hasCoords(liveLocation)
+    ? liveLocation
+    : ride?.status === 'in_progress'
+      ? ridePoint(ride, 'pickup')
+      : null;
+  const summary = travelSummary(originPoint, targetPoint);
+  const navUrl = googleMapsDirectionsUrl(targetPoint, hasCoords(liveLocation) ? liveLocation : null);
+  const canShowMapTarget = hasCoords(targetPoint);
+
+  return (
+    <div className="v-anim v-anim--3 mb-5 rounded-[26px] border border-green-100 bg-white/95 p-4 shadow-[0_16px_45px_rgba(15,23,42,0.08)]">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-green-600">Current Ride</p>
+          <h3 className="mt-1 text-lg font-black text-gray-900">{meta.title}</h3>
+          <p className="mt-0.5 text-xs font-bold text-gray-500">{ride?.commuter?.fullName || 'Commuter'}</p>
+        </div>
+        <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${meta.tone}`}>
+          {meta.label}
+        </span>
+      </div>
+
+      <RideTimeline status={ride?.status} />
+
+      <p className="mb-3 rounded-2xl bg-green-50 px-3 py-2 text-xs font-bold text-green-700">
+        {meta.message}
+      </p>
+
+      <div className="mb-3 grid grid-cols-2 gap-2 rounded-2xl bg-gray-50/90 p-2">
+        <MetricBox label={focusTarget === 'dropoff' ? 'To dropoff' : 'To pickup'} value={summary.distance} />
+        <MetricBox label="ETA" value={summary.eta} />
+      </div>
+
+      <div className="rounded-2xl bg-gray-50/90 px-4 py-3">
+        <div className="flex items-start gap-2.5">
+          <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Pickup</p>
+            <p className="truncate text-xs font-bold text-gray-800">{ride?.pickupLocation || 'Pickup location'}</p>
+          </div>
+        </div>
+        <div className="ml-[4.5px] h-3 w-px bg-gray-300" />
+        <div className="flex items-start gap-2.5">
+          <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Dropoff</p>
+            <p className="truncate text-xs font-bold text-gray-800">{ride?.dropoffLocation || 'Not specified'}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex gap-2">
+        {canShowMapTarget && (
+          <button
+            type="button"
+            onClick={onFocusTarget}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"
+            title={focusTarget === 'dropoff' ? 'Show dropoff on map' : 'Show pickup on map'}
+          >
+            <MapPin size={17} />
+          </button>
+        )}
+        {navUrl && (
+          <a
+            href={navUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"
+            title={focusTarget === 'dropoff' ? 'Navigate to dropoff' : 'Navigate to pickup'}
+          >
+            <Navigation size={17} />
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={onAdvance}
+          disabled={updating}
+          className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-green-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-green-100 disabled:opacity-70"
+        >
+          {updating ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+          {meta.action}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function DriverView({ mapRef }) {
-  const { t, setView, setCurrentUser, currentUser, pendingRides, setPendingRides } = useApp();
+  const { t, setView, setCurrentUser, currentUser, pendingRides, setPendingRides, activeDriverRide, setActiveDriverRide, liveLocation, resetThemeForLogout } = useApp();
   const [activeTab, setActiveTab] = useState('home');
   const [dutyOn, setDutyOn] = useState(true);
   const [ridesLoading, setRidesLoading] = useState(true);
@@ -63,7 +299,12 @@ export default function DriverView({ mapRef }) {
   const [nasugbuBarangays, setNasugbuBarangays] = useState([]);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState('');
+  const [fuelSnapshot, setFuelSnapshot] = useState(null);
+  const [fuelLoading, setFuelLoading] = useState(false);
+  const [fuelError, setFuelError] = useState('');
+  const [updatingRideStatus, setUpdatingRideStatus] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const lastLocationUpdateRef = useRef(0);
   const showPresidentTab = Boolean(driverProfile?.presidentToolsEnabled);
   const isOnboardingLocked = Boolean(driverProfile && !driverProfile.canOperate);
 
@@ -111,7 +352,7 @@ export default function DriverView({ mapRef }) {
 
   function flyToRide(req) {
     if (!mapRef?.current || req.pickup_lat == null || req.pickup_lng == null) return;
-    mapRef.current.flyTo([req.pickup_lat, req.pickup_lng], 17, { duration: 1.0 });
+    mapRef.current.flyTo([req.pickup_lat, req.pickup_lng], 15, { duration: 1.0 });
     const sheet = document.getElementById('driver-sheet');
     if (sheet) {
       const viewH = window.innerHeight;
@@ -131,6 +372,8 @@ export default function DriverView({ mapRef }) {
 
   async function doLogout() {
     await logout();
+    resetThemeForLogout();
+    setActiveDriverRide(null);
     setCurrentUser(null);
     setView('login');
     const sheet = document.getElementById('driver-sheet');
@@ -184,6 +427,23 @@ export default function DriverView({ mapRef }) {
     }
   }, [dutyOn, driverProfile?.canOperate, loadDriverData, setPendingRides]);
 
+  const loadFuelPrices = useCallback(async () => {
+    setFuelLoading(true);
+    setFuelError('');
+    const result = await getFuelPrices();
+    if (result?.average || result?.cheapest) {
+      setFuelSnapshot(result);
+    } else {
+      setFuelError(result?.message || 'Fuel prices are temporarily unavailable.');
+    }
+    setFuelLoading(false);
+  }, []);
+
+  const loadActiveDriverRide = useCallback(async () => {
+    const result = await getActiveRide();
+    setActiveDriverRide(result?.ride || null);
+  }, []);
+
   useEffect(() => {
     setRidesLoading(true);
     fetchPendingRides();
@@ -198,6 +458,45 @@ export default function DriverView({ mapRef }) {
     });
   }, [loadDriverData]);
 
+  useEffect(() => {
+    loadFuelPrices().catch(() => {
+      setFuelError('Fuel prices are temporarily unavailable.');
+      setFuelLoading(false);
+    });
+  }, [loadFuelPrices]);
+
+  useEffect(() => {
+    if (!driverProfile?.canOperate) {
+      setActiveDriverRide(null);
+      return;
+    }
+
+    loadActiveDriverRide().catch(() => setActiveDriverRide(null));
+  }, [driverProfile?.canOperate, loadActiveDriverRide]);
+
+  useEffect(() => {
+    const canShareLocation = activeDriverRide?.requestId
+      && ['accepted', 'arrived', 'in_progress'].includes(activeDriverRide.status)
+      && liveLocation?.lat != null
+      && liveLocation?.lng != null;
+
+    if (!canShareLocation) {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastLocationUpdateRef.current < 5000) {
+      return;
+    }
+
+    lastLocationUpdateRef.current = now;
+    updateDriverRideLocation(activeDriverRide.requestId, {
+      lat: liveLocation.lat,
+      lng: liveLocation.lng,
+      accuracy: liveLocation.accuracy ?? null,
+    }).catch(() => {});
+  }, [activeDriverRide?.requestId, activeDriverRide?.status, liveLocation]);
+
   const acceptRide = async (rideId) => {
     setAcceptingId(rideId);
     try {
@@ -206,8 +505,10 @@ export default function DriverView({ mapRef }) {
         credentials: 'include',
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         setPendingRides(prev => prev.filter(r => r.request_id !== rideId));
-        showToast(t('driver-toast-accepted'), 'success');
+        setActiveDriverRide(data?.ride || null);
+        showToast('Ride accepted. Exact pickup is now visible on your map.', 'success');
         await loadDriverData(false);
       } else {
         const data = await res.json();
@@ -221,6 +522,56 @@ export default function DriverView({ mapRef }) {
       setAcceptingId(null);
     }
   };
+
+  async function advanceActiveRide() {
+    if (!activeDriverRide?.requestId) {
+      return;
+    }
+
+    const actionByStatus = {
+      accepted: markRideArrived,
+      arrived: startRide,
+      in_progress: completeRide,
+    };
+    const nextAction = actionByStatus[activeDriverRide.status];
+
+    if (!nextAction) {
+      showToast('This ride has no next action yet.', 'error');
+      return;
+    }
+
+    setUpdatingRideStatus(true);
+    try {
+      const result = await nextAction(activeDriverRide.requestId);
+      if (result?.status === 'completed') {
+        setActiveDriverRide(null);
+        showToast('Ride completed.', 'success');
+        await loadDriverData(false);
+        fetchPendingRides();
+      } else if (result?.ride) {
+        setActiveDriverRide(result.ride);
+        showToast(result.message || 'Ride status updated.', 'success');
+      } else {
+        showToast(result?.message || 'Could not update ride status.', 'error');
+      }
+    } catch {
+      showToast('Network error - please try again.', 'error');
+    } finally {
+      setUpdatingRideStatus(false);
+    }
+  }
+
+  function focusActiveRideTarget() {
+    const target = activeDriverRide?.status === 'in_progress'
+      ? { lat: activeDriverRide.dropoffLat, lng: activeDriverRide.dropoffLng }
+      : { lat: activeDriverRide?.pickupLat, lng: activeDriverRide?.pickupLng };
+
+    if (!mapRef?.current || target.lat == null || target.lng == null) {
+      return;
+    }
+
+    mapRef.current.flyTo([target.lat, target.lng], 17, { duration: 1.0 });
+  }
 
   async function handleMembershipSubmit(payload) {
     setSubmitting(true);
@@ -488,6 +839,23 @@ export default function DriverView({ mapRef }) {
             </div>
           </div>
 
+          {activeDriverRide && (
+            <DriverActiveRideCard
+              ride={activeDriverRide}
+              updating={updatingRideStatus}
+              onAdvance={advanceActiveRide}
+              onFocusTarget={focusActiveRideTarget}
+              liveLocation={liveLocation}
+            />
+          )}
+
+          <FuelPriceCard
+            snapshot={fuelSnapshot}
+            loading={fuelLoading}
+            error={fuelError}
+            onRefresh={loadFuelPrices}
+          />
+
           {/* Stats */}
           <div className="v-anim v-anim--3 grid grid-cols-3 gap-3 mb-6 transition-opacity duration-300" style={{ opacity: dutyOn ? 1 : 0.45 }}>
             {[
@@ -614,11 +982,13 @@ export default function DriverView({ mapRef }) {
                     <div className="flex gap-2">
                       <button
                         onClick={() => acceptRide(req.request_id)}
-                        disabled={isAccepting}
+                        disabled={isAccepting || Boolean(activeDriverRide)}
                         className="v-btn-accept flex items-center justify-center gap-2"
-                        style={{ opacity: isAccepting ? 0.75 : 1 }}
+                        style={{ opacity: isAccepting || activeDriverRide ? 0.75 : 1 }}
                       >
-                        {isAccepting
+                        {activeDriverRide
+                          ? 'Finish current'
+                          : isAccepting
                           ? <><Loader2 size={14} className="animate-spin" /> {t('driver-accepting')}</>
                           : <>{t('driver-accept')}</>
                         }
@@ -627,7 +997,7 @@ export default function DriverView({ mapRef }) {
                         <button
                           onClick={() => flyToRide(req)}
                           className="v-btn-ghost flex items-center gap-1.5 px-3"
-                          title="Fly to location on map"
+                          title="Show approximate pickup area on map"
                         >
                           <MapPin size={14} />
                           <span className="text-xs">{t('driver-btn-map')}</span>

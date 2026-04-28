@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   CarFront, ScanLine, ClipboardList, User,
   AlertCircle, ChevronDown, Hash, ShieldCheck, LogOut, ChevronRight, QrCode,
-  LocateFixed, MapPin, X, Camera
+  LocateFixed, MapPin, X, Camera, CheckCircle2, Phone, Clock, Navigation, Route
 } from 'lucide-react';
 import { animate, stagger, createTimeline } from 'animejs';
 import { useApp } from '../contexts/AppContext';
@@ -11,10 +11,15 @@ import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
 import LocationSearchModal from '../components/commuter/LocationSearchModal';
 import SOSButton from '../components/SOSButton';
-import { getDriverByQr, logout, bookRide, cancelRide } from '../services/api';
+import { getDriverByQr, logout, bookRide, cancelRide, getActiveRide, getRideStatus } from '../services/api';
+import {
+  googleMapsDirectionsUrl,
+  ridePoint,
+  travelSummary,
+} from '../utils/rideMetrics';
 
 /* ── Fullscreen Searching Overlay ──────────────────────── */
-function SearchingOverlay({ onCancel }) {
+function SearchingOverlay({ onCancel, error }) {
   const containerRef = useRef(null);
   const timelineRef = useRef(null);
 
@@ -84,7 +89,7 @@ function SearchingOverlay({ onCancel }) {
         <span className="v-dot">.</span>
         <span className="v-dot">.</span>
       </div>
-      <p className="v-searching-sub">Please wait while we find you a ride</p>
+      <p className="v-searching-sub">{error || 'Please wait while we find you a ride'}</p>
 
       {/* Cancel */}
       <button onClick={onCancel} className="v-cancel-search-btn">
@@ -94,8 +99,236 @@ function SearchingOverlay({ onCancel }) {
   );
 }
 
+const COMMUTER_RIDE_STATUS_META = {
+  waiting: {
+    label: 'Searching',
+    title: 'Finding a driver',
+    message: 'Your request is visible to nearby approved drivers.',
+    tone: 'bg-blue-50 text-blue-700',
+  },
+  accepted: {
+    label: 'Accepted',
+    title: 'Driver is on the way',
+    message: 'Your driver accepted the booking and is heading to your pickup point.',
+    tone: 'bg-emerald-50 text-emerald-700',
+  },
+  arrived: {
+    label: 'Arrived',
+    title: 'Driver has arrived',
+    message: 'Meet your driver at the pickup point and board when ready.',
+    tone: 'bg-amber-50 text-amber-700',
+  },
+  in_progress: {
+    label: 'In Progress',
+    title: 'Ride in progress',
+    message: 'You are on the way to your destination.',
+    tone: 'bg-green-50 text-green-700',
+  },
+};
+
+const COMMUTER_RIDE_STEPS = [
+  { id: 'waiting', label: 'Searching' },
+  { id: 'accepted', label: 'Accepted' },
+  { id: 'arrived', label: 'Arrived' },
+  { id: 'in_progress', label: 'In Ride' },
+];
+
+function getCommuterRideSummary(ride) {
+  const pickup = ridePoint(ride, 'pickup');
+  const dropoff = ridePoint(ride, 'dropoff');
+  const driver = ridePoint(ride, 'driver');
+
+  if (['accepted', 'arrived'].includes(ride?.status)) {
+    return {
+      label: 'Driver ETA',
+      hint: driver ? 'Driver to pickup' : 'Waiting for driver GPS',
+      ...travelSummary(driver, pickup),
+    };
+  }
+
+  if (ride?.status === 'in_progress') {
+    return {
+      label: 'Dropoff ETA',
+      hint: driver ? 'Current route' : 'Trip route',
+      ...travelSummary(driver || pickup, dropoff),
+    };
+  }
+
+  return {
+    label: 'Trip Estimate',
+    hint: 'Pickup to dropoff',
+    ...travelSummary(pickup, dropoff),
+  };
+}
+
+function RideTimeline({ status }) {
+  const currentIndex = Math.max(0, COMMUTER_RIDE_STEPS.findIndex((step) => step.id === status));
+
+  return (
+    <div className="grid grid-cols-4 gap-1.5">
+      {COMMUTER_RIDE_STEPS.map((step, index) => {
+        const isDone = index <= currentIndex;
+        return (
+          <div key={step.id} className="min-w-0">
+            <div className={`h-1.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-gray-200'}`} />
+            <p className={`mt-1 truncate text-[9px] font-black uppercase ${isDone ? 'text-emerald-700' : 'text-gray-400'}`}>
+              {step.label}
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MetricBox({ icon, label, value, hint }) {
+  return (
+    <div className="rounded-2xl bg-gray-50 px-3 py-2">
+      <div className="flex items-center gap-1.5 text-gray-400">
+        {icon}
+        <p className="text-[9px] font-black uppercase tracking-wider">{label}</p>
+      </div>
+      <p className="mt-1 text-sm font-black text-gray-900">{value}</p>
+      {hint && <p className="text-[10px] font-bold text-gray-400">{hint}</p>}
+    </div>
+  );
+}
+
+function RideStatusOverlay({ ride, onClose }) {
+  const driver = ride?.driver;
+  const tricycle = ride?.tricycle;
+  const meta = COMMUTER_RIDE_STATUS_META[ride?.status] || COMMUTER_RIDE_STATUS_META.accepted;
+  const summary = getCommuterRideSummary(ride);
+  const pickup = ridePoint(ride, 'pickup');
+  const dropoff = ridePoint(ride, 'dropoff');
+  const routeUrl = googleMapsDirectionsUrl(dropoff, pickup);
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/65 px-5 backdrop-blur-md">
+      <div className="w-full max-w-sm rounded-[32px] bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)]">
+        <div className="mb-5 flex items-center gap-3">
+          <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-50">
+            <CheckCircle2 size={30} className="text-emerald-600" />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-600">Ride Status</p>
+            <h3 className="text-2xl font-black tracking-tight text-gray-900">{meta.title}</h3>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <RideTimeline status={ride?.status} />
+
+          <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${meta.tone}`}>
+            <p className="text-[10px] font-black uppercase tracking-wider opacity-80">{meta.label}</p>
+            <p className="mt-1">{meta.message}</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <MetricBox icon={<Clock size={12} />} label={summary.label} value={summary.eta} hint={summary.hint} />
+            <MetricBox icon={<Route size={12} />} label="Distance" value={summary.distance} hint="Approximate" />
+          </div>
+
+          <div className="rounded-2xl bg-gray-50 px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Driver</p>
+            <p className="mt-1 text-base font-black text-gray-900">{driver?.fullName || 'Assigned driver'}</p>
+            <p className="mt-0.5 text-xs font-bold text-gray-500">
+              {driver?.contactNumber ? `Contact: ${driver.contactNumber}` : driver?.email || 'Contact unavailable'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-red-50 px-4 py-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-red-400">Body No.</p>
+              <p className="mt-1 text-base font-black text-red-700">{tricycle?.bodyNumber || '--'}</p>
+            </div>
+            <div className="rounded-2xl bg-blue-50 px-4 py-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-blue-400">Plate</p>
+              <p className="mt-1 text-base font-black text-blue-700">{tricycle?.plateNumber || '--'}</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-gray-50 px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Route</p>
+            <p className="mt-1 text-sm font-bold text-gray-800">{ride?.pickupLocation || 'Pickup'}</p>
+            <p className="text-xs font-semibold text-gray-500">to {ride?.dropoffLocation || 'destination'}</p>
+          </div>
+        </div>
+
+        <div className="mt-5 flex gap-3">
+          {driver?.contactNumber && (
+            <a
+              href={`tel:${driver.contactNumber}`}
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"
+              title="Call driver"
+            >
+              <Phone size={19} />
+            </a>
+          )}
+          {routeUrl && (
+            <a
+              href={routeUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"
+              title="Open route"
+            >
+              <Navigation size={19} />
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-2xl bg-gray-900 px-4 py-3 text-sm font-black text-white"
+          >
+            Keep Tracking
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActiveRideStatusCard({ ride, onOpen }) {
+  const meta = COMMUTER_RIDE_STATUS_META[ride?.status] || COMMUTER_RIDE_STATUS_META.accepted;
+  const summary = getCommuterRideSummary(ride);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="mb-5 w-full rounded-[24px] border border-emerald-100 bg-white/95 p-4 text-left shadow-[0_14px_40px_rgba(15,23,42,0.08)]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-600">Current Ride</p>
+          <h3 className="mt-1 text-lg font-black text-gray-900">{meta.title}</h3>
+          <p className="mt-1 text-xs font-bold text-gray-500">{meta.message}</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${meta.tone}`}>
+          {meta.label}
+        </span>
+      </div>
+      <div className="mt-3 rounded-2xl bg-gray-50 px-3 py-2">
+        <p className="truncate text-xs font-bold text-gray-800">{ride?.pickupLocation || 'Pickup'}</p>
+        <p className="truncate text-xs font-semibold text-gray-500">to {ride?.dropoffLocation || 'destination'}</p>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="rounded-2xl bg-emerald-50 px-3 py-2">
+          <p className="text-[9px] font-black uppercase tracking-wider text-emerald-600">{summary.label}</p>
+          <p className="mt-0.5 text-sm font-black text-emerald-800">{summary.eta}</p>
+        </div>
+        <div className="rounded-2xl bg-blue-50 px-3 py-2">
+          <p className="text-[9px] font-black uppercase tracking-wider text-blue-600">Distance</p>
+          <p className="mt-0.5 text-sm font-black text-blue-800">{summary.distance}</p>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export default function CommuterView({ mapRef }) {
-  const { t, setView, currentUser, setCurrentUser, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, setDestinationPin, liveLocation, isMapMoving } = useApp();
+  const { t, setView, currentUser, setCurrentUser, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, liveLocation, isMapMoving, darkMode, setActiveCommuterRide, resetThemeForLogout } = useApp();
   const [activeTab, setActiveTab] = useState('ride');
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState('');
@@ -111,35 +344,178 @@ export default function CommuterView({ mapRef }) {
   const scannerRef = useRef(null);
   const scannerLockedRef = useRef(false);
   const [confirmingPin, setConfirmingPin] = useState(false);
-  const [bookingStatus, setBookingStatus] = useState(null); // null | 'searching'
+  const [bookingStatus, setBookingStatus] = useState(null); // null | 'searching' | 'active'
   const [activeRideId, setActiveRideId] = useState(null); // request_id of in-progress booking
+  const [activeRide, setActiveRide] = useState(null);
+  const [bookingError, setBookingError] = useState('');
 
   // Computed state for booking validation
-  const canBook = userPickup && destination;
+  const canBook = userPickup && destination && destinationPin && !activeRide;
+  const needsDestinationPin = Boolean(userPickup && destination && !destinationPin && !activeRide);
 
   async function handleBookRide() {
-    if (!canBook) return;
+    if (!canBook) {
+      if (needsDestinationPin) {
+        setBookingError('Please pin or search the exact dropoff so your driver can navigate there.');
+      }
+      return;
+    }
     setBookingStatus('searching');
+    setBookingError('');
     try {
       const result = await bookRide(
         userPickup.label || 'GPS Location',
         destination,
         userPickup.lat ?? null,
-        userPickup.lng ?? null
+        userPickup.lng ?? null,
+        destinationPin?.lat ?? null,
+        destinationPin?.lng ?? null
       );
-      if (result?.requestId) setActiveRideId(result.requestId);
+      const ride = result?.ride || null;
+      const requestId = result?.requestId || ride?.requestId;
+
+      if (requestId) {
+        applyRideState(ride || { requestId, status: 'waiting' });
+        return;
+      }
+
+      setBookingStatus(null);
+      setBookingError(result?.message || 'Could not create ride request.');
     } catch {
-      // Keep the animation even if API fails (demo mode)
+      setBookingStatus(null);
+      setBookingError('Network error. Please try booking again.');
     }
   }
 
   async function cancelBooking() {
     if (activeRideId) {
-      try { await cancelRide(activeRideId); } catch { /* best-effort */ }
+      try {
+        const result = await cancelRide(activeRideId);
+        if (result?.status !== 'cancelled') {
+          const latest = await getRideStatus(activeRideId);
+          if (latest?.ride && latest.ride.status !== 'waiting') {
+            setActiveRide(latest.ride);
+            setBookingStatus('active');
+            return;
+          }
+
+          setBookingError(result?.message || 'Could not cancel this request.');
+        }
+      } catch {
+        setBookingError('Network error. Please try again.');
+        return;
+      }
     }
     setActiveRideId(null);
+    setActiveRide(null);
+    setActiveCommuterRide(null);
     setBookingStatus(null);
   }
+
+  function minimizeActiveRide() {
+    setBookingStatus(null);
+  }
+
+  function showActiveRideStatus() {
+    if (activeRide && activeRide.status !== 'waiting') {
+      setBookingStatus('active');
+    }
+  }
+
+  const applyRideState = useCallback((ride, showOverlay = true) => {
+    if (!ride || ['cancelled', 'completed'].includes(ride.status)) {
+      setActiveRideId(null);
+      setActiveRide(null);
+      setActiveCommuterRide(null);
+      setBookingStatus(null);
+      return;
+    }
+
+    setActiveRide(ride);
+    setActiveCommuterRide(ride);
+    setActiveRideId(ride.requestId);
+
+    if (ride.pickupLat != null && ride.pickupLng != null) {
+      setUserPickup({
+        lat: ride.pickupLat,
+        lng: ride.pickupLng,
+        label: ride.pickupLocation || 'Pickup location',
+      });
+    }
+
+    if (ride.dropoffLocation) {
+      setDestination(ride.dropoffLocation);
+    }
+
+    if (ride.dropoffLat != null && ride.dropoffLng != null) {
+      setDestinationPin({
+        lat: ride.dropoffLat,
+        lng: ride.dropoffLng,
+        label: ride.dropoffLocation || 'Dropoff location',
+      });
+    }
+
+    setBookingStatus((current) => {
+      if (ride.status === 'waiting') {
+        return 'searching';
+      }
+
+      if (showOverlay || current === 'searching' || current === 'active') {
+        return 'active';
+      }
+
+      return current;
+    });
+  }, [setActiveCommuterRide, setDestination, setDestinationPin, setUserPickup]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function restoreActiveRide() {
+      const result = await getActiveRide();
+      if (!ignore && result?.ride) {
+        applyRideState(result.ride, false);
+      }
+    }
+
+    restoreActiveRide().catch(() => {});
+    return () => {
+      ignore = true;
+    };
+  }, [applyRideState]);
+
+  useEffect(() => {
+    if (!activeRideId) {
+      return undefined;
+    }
+
+    let ignore = false;
+
+    async function refreshRideStatus() {
+      const result = await getRideStatus(activeRideId);
+      if (ignore) {
+        return;
+      }
+
+      if (result?.ride) {
+        setBookingError('');
+        applyRideState(result.ride, false);
+        return;
+      }
+
+      setBookingError(result?.message || 'Still waiting for a driver...');
+    }
+
+    refreshRideStatus().catch(() => {});
+    const interval = setInterval(() => {
+      refreshRideStatus().catch(() => {});
+    }, 3000);
+
+    return () => {
+      ignore = true;
+      clearInterval(interval);
+    };
+  }, [activeRideId, applyRideState]);
 
   // Re-expand bottom sheet when pin mode ends
   useEffect(() => {
@@ -354,6 +730,8 @@ export default function CommuterView({ mapRef }) {
 
   async function doLogout() {
     await logout();
+    resetThemeForLogout();
+    setActiveCommuterRide(null);
     setCurrentUser(null);
     setView('login');
     const sheet = document.getElementById('commuter-sheet');
@@ -377,7 +755,11 @@ export default function CommuterView({ mapRef }) {
 
       {/* Searching for driver overlay */}
       {bookingStatus === 'searching' && (
-        <SearchingOverlay onCancel={cancelBooking} />
+        <SearchingOverlay onCancel={cancelBooking} error={bookingError} />
+      )}
+
+      {bookingStatus === 'active' && activeRide && activeRide.status !== 'waiting' && (
+        <RideStatusOverlay ride={activeRide} onClose={minimizeActiveRide} />
       )}
 
       {/* Location Search Modal */}
@@ -452,6 +834,10 @@ export default function CommuterView({ mapRef }) {
         {/* ── Ride Tab ─────────────────────────────────────── */}
         <div className={`tab-content pb-4${activeTab === 'ride' ? ' active' : ''}`}>
           <h2 className="v-anim v-anim--1 text-3xl font-black text-gray-900 mb-6 tracking-tight">{t('commuter-where')}</h2>
+
+          {activeRide && activeRide.status !== 'waiting' && (
+            <ActiveRideStatusCard ride={activeRide} onOpen={showActiveRideStatus} />
+          )}
 
           <div className="v-anim v-anim--2 v-route-panel mb-4 overflow-hidden">
             <div className="v-route-line" />
@@ -535,12 +921,22 @@ export default function CommuterView({ mapRef }) {
             <p className="text-xs font-bold text-red-500 mb-4 px-1">⚠ {gpsError}</p>
           )}
 
+          {bookingError && !bookingStatus && (
+            <p className="text-xs font-bold text-red-500 mb-4 px-1">{bookingError}</p>
+          )}
+
+          {needsDestinationPin && !bookingError && (
+            <p className="text-xs font-bold text-amber-600 mb-4 px-1">
+              Pin or search the exact dropoff so your driver can see the route.
+            </p>
+          )}
+
           {/* Quick destination chips */}
           <div className="v-anim v-anim--4 flex gap-3 mb-8 overflow-x-auto pb-2 hide-scrollbar">
             {[['📍', 'BSU ARASOF'], ['🛒', 'Savemore'], ['⛪', 'Simbahan']].map(([emoji, place]) => (
               <button
                 key={place}
-                onClick={() => setDestination(place)}
+                onClick={() => { setDestination(place); setDestinationPin(null); }}
                 className="v-chip"
               >
                 <span>{emoji}</span> {place}
@@ -566,9 +962,9 @@ export default function CommuterView({ mapRef }) {
                 <div className="w-full h-0.5 bg-red-500 absolute top-1/2 shadow-[0_0_8px_#ef4444] radar-ping" />
               </div>
               {scanStatus !== 'scanning' && (
-                <div className="absolute inset-0 z-30 bg-white/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2 px-6 text-center">
-                  <Camera size={34} className="text-gray-400" />
-                  <p className="text-xs font-bold text-gray-500">
+                <div className={`absolute inset-0 z-30 backdrop-blur-sm flex flex-col items-center justify-center gap-2 px-6 text-center ${darkMode ? 'bg-slate-900/85' : 'bg-white/85'}`}>
+                  <Camera size={34} className={darkMode ? 'text-gray-300' : 'text-gray-400'} />
+                  <p className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>
                     {scanStatus === 'starting' ? 'Starting camera...' : 'Camera idle'}
                   </p>
                 </div>
@@ -600,7 +996,7 @@ export default function CommuterView({ mapRef }) {
           </div>
 
           {scanResult && (
-            <div className="v-anim v-anim--4 mt-5 p-4 rounded-2xl border border-gray-200 bg-white/85 shadow-sm space-y-2">
+            <div className={`v-anim v-anim--4 mt-5 p-4 rounded-2xl border shadow-sm space-y-2 ${darkMode ? 'border-white/10 bg-slate-900/80' : 'border-gray-200 bg-white/85'}`}>
               <p className="text-xs font-black text-gray-400 uppercase tracking-wider">Driver Details</p>
               <p className="text-sm font-bold text-gray-900">Name: {scanResult.driver.fullName}</p>
               <p className="text-sm font-semibold text-gray-700">Username: {scanResult.driver.username}</p>
@@ -625,7 +1021,13 @@ export default function CommuterView({ mapRef }) {
               <div className="relative">
                 <div 
                   className="v-input-wrap shadow-sm transition-all"
-                  style={isReportDropdownOpen ? { borderColor: '#ef4444', backgroundColor: '#ffffff', boxShadow: 'inset 0 2px 6px rgba(0, 0, 0, 0.01), 0 0 0 4px rgba(239, 68, 68, 0.15)' } : {}}
+                  style={isReportDropdownOpen ? {
+                    borderColor: '#ef4444',
+                    backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.92)' : '#ffffff',
+                    boxShadow: darkMode
+                      ? 'inset 0 2px 6px rgba(255, 255, 255, 0.02), 0 0 0 4px rgba(239, 68, 68, 0.22)'
+                      : 'inset 0 2px 6px rgba(0, 0, 0, 0.01), 0 0 0 4px rgba(239, 68, 68, 0.15)',
+                  } : {}}
                 >
                   <AlertCircle 
                     className="v-input-icon w-5 h-5 transition-all" 
@@ -637,7 +1039,7 @@ export default function CommuterView({ mapRef }) {
                     className="w-full bg-transparent border-none outline-none text-left flex items-center justify-between transition-colors"
                     style={{ padding: '18px 16px 18px 48px' }}
                   >
-                    <span className={reportType ? 'text-gray-900 font-semibold text-[15px]' : 'text-gray-400 font-medium text-[15px]'}>
+                    <span className={reportType ? `${darkMode ? 'text-gray-100' : 'text-gray-900'} font-semibold text-[15px]` : 'text-gray-400 font-medium text-[15px]'}>
                       {reportType ? [
                         { value: 'overcharging', label: t('commuter-overcharging') || 'Overcharging' },
                         { value: 'reckless', label: t('commuter-reckless') || 'Reckless Driver' },
@@ -646,7 +1048,7 @@ export default function CommuterView({ mapRef }) {
                         { value: 'others', label: t('commuter-others') || 'Others' }
                       ].find(o => o.value === reportType)?.label : (t('commuter-select-issue') || 'Select an issue...')}
                     </span>
-                    <ChevronDown className={`w-5 h-5 transition-transform ${isReportDropdownOpen ? 'rotate-180 text-red-500' : 'text-gray-400'}`} />
+                    <ChevronDown className={`w-5 h-5 transition-transform ${isReportDropdownOpen ? 'rotate-180 text-red-500' : (darkMode ? 'text-gray-300' : 'text-gray-400')}`} />
                   </button>
                 </div>
 
@@ -654,7 +1056,7 @@ export default function CommuterView({ mapRef }) {
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setIsReportDropdownOpen(false)} />
                     <ul 
-                      className="absolute z-50 w-full mt-2 bg-white/95 backdrop-blur-xl border border-gray-100 rounded-2xl shadow-xl overflow-hidden py-2" 
+                      className={`absolute z-50 w-full mt-2 backdrop-blur-xl border rounded-2xl shadow-xl overflow-hidden py-2 ${darkMode ? 'bg-slate-900/95 border-white/10' : 'bg-white/95 border-gray-100'}`} 
                       style={{ opacity: 0, transform: 'translateY(14px)', animation: 'v-fadein 0.25s cubic-bezier(0.16,1,0.3,1) forwards' }}
                     >
                       {[
@@ -668,7 +1070,9 @@ export default function CommuterView({ mapRef }) {
                           <button
                             type="button"
                             onClick={() => { setReportType(option.value); setIsReportDropdownOpen(false); }}
-                            className={`w-full text-left px-5 py-3.5 text-[15px] font-semibold transition-colors hover:bg-gray-50 active:bg-gray-100 ${reportType === option.value ? 'text-red-600 bg-red-50/50' : 'text-gray-700'}`}
+                            className={`w-full text-left px-5 py-3.5 text-[15px] font-semibold transition-colors ${darkMode
+                              ? (reportType === option.value ? 'text-red-300 bg-red-500/15 hover:bg-red-500/20 active:bg-red-500/25' : 'text-gray-200 hover:bg-white/5 active:bg-white/10')
+                              : (reportType === option.value ? 'text-red-600 bg-red-50/50 hover:bg-red-50 active:bg-red-100' : 'text-gray-700 hover:bg-gray-50 active:bg-gray-100')}`}
                           >
                             {option.label}
                           </button>
@@ -720,8 +1124,8 @@ export default function CommuterView({ mapRef }) {
         <div className={`tab-content pb-4${activeTab === 'account' ? ' active' : ''}`}>
           <h2 className="v-anim v-anim--1 text-3xl font-black text-gray-900 mb-8 tracking-tight">{t('commuter-account-title')}</h2>
 
-          <div className="v-anim v-anim--2 v-profile-card mb-8" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(243,244,246,0.5) 100%)' }}>
-            <div className="w-16 h-16 bg-white shadow-sm border border-gray-100 rounded-full flex items-center justify-center shrink-0">
+          <div className="v-anim v-anim--2 v-profile-card mb-8" style={{ background: darkMode ? 'linear-gradient(135deg, rgba(30,41,59,0.82) 0%, rgba(15,23,42,0.72) 100%)' : 'linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(243,244,246,0.5) 100%)' }}>
+            <div className={`w-16 h-16 shadow-sm rounded-full flex items-center justify-center shrink-0 ${darkMode ? 'bg-slate-800 border border-white/10' : 'bg-white border border-gray-100'}`}>
               <User size={32} className="text-gray-400" />
             </div>
             <div className="flex-1 min-w-0">
@@ -732,8 +1136,8 @@ export default function CommuterView({ mapRef }) {
 
           <div className="v-anim v-anim--3 space-y-3 mb-8">
             {[
-              { icon: <User size={20} className="text-gray-600" />, label: 'Edit Profile' },
-              { icon: <ShieldCheck size={20} className="text-gray-600" />, label: 'Privacy & Security' },
+              { icon: <User size={20} className={darkMode ? 'text-gray-300' : 'text-gray-600'} />, label: 'Edit Profile' },
+              { icon: <ShieldCheck size={20} className={darkMode ? 'text-gray-300' : 'text-gray-600'} />, label: 'Privacy & Security' },
             ].map((item, i) => (
               <button key={i} className="v-menu-row">
                 <div className="flex items-center gap-4">
@@ -759,14 +1163,14 @@ export default function CommuterView({ mapRef }) {
 
       {/* Bottom Nav */}
       <nav className="v-nav">
-        {navItems.map(({ id, Icon, label }) => (
+        {navItems.map((item) => (
           <button
-            key={id}
-            onClick={() => switchTab(id)}
-            className={`v-nav-item ${activeTab === id ? 'active' : ''}`}
+            key={item.id}
+            onClick={() => switchTab(item.id)}
+            className={`v-nav-item ${activeTab === item.id ? 'active' : ''}`}
           >
-            <Icon size={24} />
-            <span className="v-nav-label">{label}</span>
+            <item.Icon size={24} />
+            <span className="v-nav-label">{item.label}</span>
           </button>
         ))}
       </nav>

@@ -84,7 +84,7 @@ function PlaceholderTab({ dm, icon: Icon, title, description }) {
 }
 
 export default function AdminView() {
-  const { setView, setCurrentUser, currentUser, darkMode, toggleDarkMode } = useApp();
+  const { setView, setCurrentUser, currentUser, darkMode, toggleDarkMode, resetThemeForLogout } = useApp();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const dm = darkMode;
@@ -104,6 +104,7 @@ export default function AdminView() {
 
   async function handleLogout() {
     await logout();
+    resetThemeForLogout();
     setCurrentUser(null);
     setView('admin-login');
   }
