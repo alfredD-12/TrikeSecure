@@ -5,6 +5,24 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const isProduction = NODE_ENV === 'production';
 
+function parseBooleanEnv(name, defaultValue) {
+  const value = process.env[name];
+
+  if (value === undefined || value.trim() === '') {
+    return defaultValue;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true') {
+    return true;
+  }
+  if (normalized === 'false') {
+    return false;
+  }
+
+  throw new Error(`${name} must be either "true" or "false".`);
+}
+
 function requireEnv(name, options = {}) {
   const value = process.env[name];
   const { allowEmpty = false } = options;
@@ -77,5 +95,6 @@ module.exports = {
   },
   session: {
     tableName: process.env.SESSION_TABLE || 'user_sessions',
+    cookieSecure: parseBooleanEnv('SESSION_COOKIE_SECURE', isProduction),
   },
 };

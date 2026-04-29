@@ -121,7 +121,7 @@ app.use(session({
   rolling: true,
   cookie: {
     httpOnly: true,
-    secure: config.isProduction,
+    secure: config.session.cookieSecure,
     sameSite: 'lax',
     maxAge: 1000 * 60 * 60 * 24, // 1 day
   },
