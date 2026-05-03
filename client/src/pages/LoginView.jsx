@@ -134,6 +134,11 @@ export default function LoginView() {
       const data = await login(email.trim().toLowerCase(), pass);
 
       if (data.message === 'Login successful.') {
+        if (data.role === 'admin' || data.role === 'lgu') {
+          // If an admin accidentally logs in through the mobile app, redirect them
+          window.location.href = '/admin';
+          return;
+        }
         const resolvedRole = data.role === 'driver' ? 'driver' : 'commuter';
         setCurrentUser({
           username: data.username,

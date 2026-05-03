@@ -240,6 +240,16 @@
   transform: translateY(-50%) scale(1.1);
 }
 
+/* ═══ Profile card ═══ */
+.v-profile-card {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+}
+
 /* ═══ Stat card ═══ */
 .v-stat-card {
   background: rgba(255, 255, 255, 0.6);
@@ -267,11 +277,46 @@
 .v-anim--4 { animation-delay: 0.24s; }
 .v-anim--5 { animation-delay: 0.30s; }
 .v-anim--6 { animation-delay: 0.36s; }
+.v-anim--7 { animation-delay: 0.42s; }
+.v-anim--8 { animation-delay: 0.48s; }
 
 @keyframes v-fadein {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes v-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes v-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes v-modal-out {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.9) translateY(10px);
   }
 }
 

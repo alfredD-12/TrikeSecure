@@ -14,7 +14,7 @@ function getAccountRole(req) {
 }
 
 function isAuthenticated(req) {
-  return Boolean(req?.session?.userId);
+  return Boolean(req?.session?.userId && (req?.session?.accountRole || req?.session?.role));
 }
 
 function requireAuth(req, res, next) {

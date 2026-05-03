@@ -78,15 +78,20 @@ export function AppProvider({ children }) {
       const isAdminRoute = window.location.pathname.startsWith('/admin');
 
       if (me?.userId) {
-        if (isAdminRoute) {
-          if (me.role === 'admin') {
-            setCurrentUser({ ...me });
-            setView('admin-dashboard');
-          } else {
-            // Found a non-admin session on the admin route. Force view to admin-login
-            setCurrentUser(null);
-            setView('admin-login');
+        if (me.role === 'admin' || me.role === 'lgu') {
+          if (!isAdminRoute) {
+            window.location.href = '/admin';
+            return;
           }
+          setCurrentUser({ ...me });
+          setView('admin-dashboard');
+          return;
+        }
+
+        if (isAdminRoute) {
+          // Found a non-admin session on the admin route. Force view to admin-login
+          setCurrentUser(null);
+          setView('admin-login');
           return;
         }
 

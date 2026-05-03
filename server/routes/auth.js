@@ -136,9 +136,16 @@ router.post('/login', async (req, res) => {
 
       const sessionUser = setSessionUser(req, user);
 
-      return res.json({
-        message: 'Login successful.',
-        ...sessionUser,
+      req.session.save((saveError) => {
+        if (saveError) {
+          console.error(saveError);
+          return res.status(500).json({ message: 'Server error.' });
+        }
+
+        return res.json({
+          message: 'Login successful.',
+          ...sessionUser,
+        });
       });
     });
   } catch (err) {
@@ -158,7 +165,7 @@ router.post('/logout', (req, res) => {
 
 // Get current session user
 router.get('/me', (req, res) => {
-  if (!req.session.userId) {
+  if (!req.session.userId || (!req.session.accountRole && !req.session.role)) {
     return res.status(401).json({ message: 'Not authenticated.' });
   }
 

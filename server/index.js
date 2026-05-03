@@ -15,6 +15,9 @@ const scanRoutes = require('./routes/scan');
 const ridesRoutes = require('./routes/rides');
 const sosRoutes = require('./routes/sos');
 const fuelRoutes = require('./routes/fuel');
+const complaintsRoutes = require('./routes/complaints');
+const profileRoutes = require('./routes/profile');
+const supportRoutes = require('./routes/support');
 
 const app = express();
 const MySQLStore = MySQLStoreFactory(session);
@@ -135,6 +138,55 @@ app.use('/api/scan', scanRoutes);
 app.use('/api/rides', ridesRoutes);
 app.use('/api/sos', sosRoutes);
 app.use('/api/fuel', fuelRoutes);
+app.use('/api/complaints', complaintsRoutes);
+app.use('/api/profile', profileRoutes);
+app.use('/api/support', supportRoutes);
+
+// Geocode proxy — keeps the Geoapify key server-side and avoids browser CORS/401
+const GEOAPIFY_KEY = process.env.GEOAPIFY_KEY || '';
+
+app.get('/api/geocode/reverse', async (req, res) => {
+  const { lat, lon, lang } = req.query;
+  if (!lat || !lon) {
+    return res.status(400).json({ message: 'lat and lon are required.' });
+  }
+
+  try {
+    const url = `https://api.geoapify.com/v1/geocode/reverse?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&lang=${encodeURIComponent(lang || 'en')}&apiKey=${GEOAPIFY_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error('Geocode reverse proxy error:', err.message);
+    res.status(502).json({ message: 'Geocode service unavailable.' });
+  }
+});
+
+app.get('/api/geocode/search', async (req, res) => {
+  const { text, lang, bias, filter, limit } = req.query;
+  if (!text) {
+    return res.status(400).json({ message: 'text is required.' });
+  }
+
+  try {
+    const params = new URLSearchParams({
+      text,
+      lang: lang || 'en',
+      apiKey: GEOAPIFY_KEY,
+    });
+    if (bias) params.set('bias', bias);
+    if (filter) params.set('filter', filter);
+    if (limit) params.set('limit', limit);
+
+    const url = `https://api.geoapify.com/v1/geocode/autocomplete?${params.toString()}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    console.error('Geocode search proxy error:', err.message);
+    res.status(502).json({ message: 'Geocode service unavailable.' });
+  }
+});
 
 // Health check
 app.get('/api/health', (req, res) => {

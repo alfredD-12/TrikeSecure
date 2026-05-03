@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { ArrowLeft, Search, MapPin, Loader2, Building2, TreePine, Landmark, Navigation, X } from 'lucide-react';
 import Fuse from 'fuse.js';
+import { API_URL } from '../../services/api';
 
 /* ── Local places database for fuzzy matching ── */
 const LOCAL_PLACES = [
@@ -110,10 +111,9 @@ export default function LocationSearchModal({ mode, onClose, onSelect, mapRef, t
 
     // 2. Also query Geoapify Autocomplete API for broader results
     try {
-      const apiKey = import.meta.env.VITE_GEOAPIFY_KEY;
       const url =
-        `https://api.geoapify.com/v1/geocode/autocomplete` +
-        `?text=${encodeURIComponent(q)}&limit=7&filter=countrycode:ph&lang=en&apiKey=${apiKey}`;
+        `${API_URL}/geocode/search` +
+        `?text=${encodeURIComponent(q)}&limit=7&filter=countrycode:ph&lang=en`;
       const res  = await fetch(url);
       const data = await res.json();
 
@@ -161,10 +161,9 @@ export default function LocationSearchModal({ mode, onClose, onSelect, mapRef, t
     // For local fuzzy results, fetch accurate coordinates from Geoapify
     if (place._local) {
       try {
-        const apiKey = import.meta.env.VITE_GEOAPIFY_KEY;
         const name = parts[0].trim();
         const res = await fetch(
-          `https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(name + ', Philippines')}&limit=1&lang=en&apiKey=${apiKey}`
+          `${API_URL}/geocode/search?text=${encodeURIComponent(name + ', Philippines')}&limit=1&lang=en`
         );
         const data = await res.json();
         const f = data.features?.[0];

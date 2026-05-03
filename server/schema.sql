@@ -33,6 +33,9 @@ DROP TRIGGER IF EXISTS trg_franchises_after_update;
 CREATE TABLE users (
   user_id INT AUTO_INCREMENT PRIMARY KEY,
   full_name VARCHAR(100) NOT NULL,
+  sex ENUM('male', 'female', 'other') DEFAULT NULL,
+  weight DECIMAL(5,2) DEFAULT NULL,
+  mobile_number VARCHAR(20) DEFAULT NULL,
   username VARCHAR(50) NOT NULL UNIQUE,
   email VARCHAR(150) NOT NULL UNIQUE,
   password VARCHAR(255) NOT NULL,
@@ -164,18 +167,19 @@ CREATE TABLE franchises (
 
 CREATE TABLE complaints (
   complaint_id INT AUTO_INCREMENT PRIMARY KEY,
+  commuter_id INT DEFAULT NULL,
   tricycle_id INT NOT NULL,
   driver_id INT NOT NULL,
   complaint_type VARCHAR(100) DEFAULT NULL,
   description TEXT,
   date_reported TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   status ENUM('pending', 'resolved') DEFAULT 'pending',
+  KEY idx_complaints_commuter (commuter_id),
   KEY idx_complaints_tricycle (tricycle_id),
   KEY idx_complaints_driver (driver_id),
-  CONSTRAINT fk_complaints_tricycle
-    FOREIGN KEY (tricycle_id) REFERENCES tricycles(tricycle_id),
-  CONSTRAINT fk_complaints_driver
-    FOREIGN KEY (driver_id) REFERENCES drivers(driver_id)
+  CONSTRAINT fk_complaints_commuter FOREIGN KEY (commuter_id) REFERENCES users(user_id) ON DELETE SET NULL,
+  CONSTRAINT fk_complaints_tricycle FOREIGN KEY (tricycle_id) REFERENCES tricycles(tricycle_id),
+  CONSTRAINT fk_complaints_driver FOREIGN KEY (driver_id) REFERENCES drivers(driver_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE ride_requests (

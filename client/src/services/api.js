@@ -289,3 +289,69 @@ export async function reviewAdminFranchise(franchiseId, payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export async function searchDriversByBodyNumber(plateNumber) {
+  const params = new URLSearchParams();
+  if (plateNumber) {
+    params.set('plateNumber', plateNumber);
+  }
+
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch(`/complaints/drivers/search${suffix}`);
+}
+
+export async function submitComplaint(payload) {
+  const res = await fetch(`${API_URL}/complaints`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(res);
+}
+
+export async function getProfile() {
+  return apiFetch('/profile/me');
+}
+
+export async function updateProfile(payload) {
+  const res = await fetch(`${API_URL}/profile`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(res);
+}
+
+export async function updatePassword(newPassword) {
+  const res = await fetch(`${API_URL}/profile/password`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ newPassword }),
+  });
+  return parseResponse(res);
+}
+
+export async function getRideHistory(limit = 20, offset = 0) {
+  return apiFetch(`/rides/history?limit=${limit}&offset=${offset}`);
+}
+
+export async function getComplaintHistory(limit = 20, offset = 0) {
+  return apiFetch(`/complaints/history?limit=${limit}&offset=${offset}`);
+}
+
+export async function getSOSHistory(limit = 20, offset = 0) {
+  return apiFetch(`/sos/history?limit=${limit}&offset=${offset}`);
+}
+
+export async function contactSupport(payload) {
+  const res = await fetch(`${API_URL}/support/contact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(res);
+}

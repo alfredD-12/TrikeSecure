@@ -75,9 +75,8 @@ function MapClickHandler() {
       const { lat, lng } = e.latlng;
       let label;
       try {
-        const apiKey = import.meta.env.VITE_GEOAPIFY_REVERSE_KEY;
         const res = await fetch(
-          `https://api.geoapify.com/v1/geocode/reverse?lat=${lat}&lon=${lng}&lang=en&apiKey=${apiKey}`
+          `${API_URL}/geocode/reverse?lat=${lat}&lon=${lng}&lang=en`
         );
         const data = await res.json();
         const props = data.features?.[0]?.properties;
@@ -128,6 +127,7 @@ function RouteLayer() {
     }
     if (activeCommuterRide || activeDriverRide || !userPickup || !destinationPin) return;
 
+    let isMounted = true;
     const url = `https://router.project-osrm.org/route/v1/driving/` +
       `${userPickup.lng},${userPickup.lat};${destinationPin.lng},${destinationPin.lat}` +
       `?overview=full&geometries=geojson`;
@@ -135,6 +135,7 @@ function RouteLayer() {
     fetch(url)
       .then(r => r.json())
       .then(data => {
+        if (!isMounted || !map || !map.getContainer()) return;
         const coords = data?.routes?.[0]?.geometry?.coordinates;
         if (!coords) return;
         // OSRM returns [lng, lat], Leaflet needs [lat, lng]
@@ -152,6 +153,7 @@ function RouteLayer() {
       .catch(() => {});
 
     return () => {
+      isMounted = false;
       if (polylineRef.current) { polylineRef.current.remove(); polylineRef.current = null; }
     };
   }, [userPickup, destinationPin, activeCommuterRide, activeDriverRide, map]);
@@ -194,12 +196,18 @@ const commuterRequestIcon = L.divIcon({
 });
 
 // Tile layer that reacts to dark mode changes
+const STADIA_API_KEY = import.meta.env.VITE_STADIA_API_KEY || '';
+
 function DarkAwareTileLayer({ darkMode }) {
   if (darkMode) {
+    const stadiaDarkUrl = STADIA_API_KEY
+      ? `https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png?api_key=${STADIA_API_KEY}`
+      : 'https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png';
+
     return (
       <TileLayer
         key="alidade-smooth-dark"
-        url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
+        url={stadiaDarkUrl}
         maxZoom={20}
         minZoom={3}
         attribution="&copy; Stadia Maps &copy; OpenMapTiles &copy; OpenStreetMap contributors"
@@ -229,6 +237,7 @@ function UserLocationDot() {
     if (!['commuter', 'driver'].includes(view)) return;
     if (!navigator.geolocation) return;
 
+    let isMounted = true;
     const dotHtml = `
       <div class="user-location-dot">
         <div class="user-location-dot__ring"></div>
@@ -244,9 +253,12 @@ function UserLocationDot() {
 
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
+        if (!isMounted) return;
         const { latitude: lat, longitude: lng, accuracy } = position.coords;
         // Publish to context so CommuterView GPS button can read it instantly
         setLiveLocation({ lat, lng, accuracy });
+
+        if (!map || !map.getContainer()) return; // Map might be destroyed
 
         if (!markerRef.current) {
           markerRef.current = L.marker([lat, lng], { icon: dotIcon, zIndexOffset: 1000, interactive: false }).addTo(map);
@@ -259,6 +271,7 @@ function UserLocationDot() {
     );
 
     return () => {
+      isMounted = false;
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
       if (markerRef.current) { markerRef.current.remove(); markerRef.current = null; }
     };
@@ -522,6 +535,7 @@ function ActiveRideRouteLayer() {
       return undefined;
     }
 
+    let isMounted = true;
     const url = `https://router.project-osrm.org/route/v1/driving/` +
       `${routeStart.lng},${routeStart.lat};${routeEnd.lng},${routeEnd.lat}` +
       `?overview=full&geometries=geojson`;
@@ -529,6 +543,7 @@ function ActiveRideRouteLayer() {
     fetch(url)
       .then(r => r.json())
       .then(data => {
+        if (!isMounted || !map || !map.getContainer()) return;
         const coords = data?.routes?.[0]?.geometry?.coordinates;
         if (!coords) return;
 
@@ -550,6 +565,7 @@ function ActiveRideRouteLayer() {
       .catch(() => {});
 
     return () => {
+      isMounted = false;
       if (polylineRef.current) {
         polylineRef.current.remove();
         polylineRef.current = null;

@@ -45,4 +45,44 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+router.get('/history', requireAuth, async (req, res) => {
+  const userId = req.session?.userId;
+  const { limit = 20, offset = 0 } = req.query;
+
+  try {
+    const [rows] = await db.query(
+      `
+        SELECT
+          s.alert_id,
+          s.latitude,
+          s.longitude,
+          s.ride_id,
+          s.message,
+          s.created_at,
+          s.status
+        FROM sos_alerts s
+        WHERE s.user_id = ?
+        ORDER BY s.created_at DESC
+        LIMIT ? OFFSET ?
+      `,
+      [userId, Number(limit) || 20, Number(offset) || 0]
+    );
+
+    const alerts = rows.map((row) => ({
+      id: row.alert_id,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      rideId: row.ride_id,
+      message: row.message,
+      createdAt: row.created_at,
+      status: row.status,
+    }));
+
+    res.json({ alerts });
+  } catch (error) {
+    console.error('SOS history error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 module.exports = router;

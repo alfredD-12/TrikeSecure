@@ -692,4 +692,58 @@ router.get('/driver-profile', requireAuth, requireRole('driver'), async (req, re
   }
 });
 
+router.get('/history', requireAuth, async (req, res) => {
+  const userId = req.session?.userId;
+  const { limit = 20, offset = 0 } = req.query;
+
+  try {
+    const [rows] = await db.query(
+      `
+        SELECT
+          r.request_id,
+          r.pickup_location,
+          r.dropoff_location,
+          r.fare_amount,
+          r.request_time,
+          r.assigned_driver_id,
+          r.status,
+          d.driver_id,
+          d.license_number,
+          u.full_name AS driver_name,
+          t.plate_number,
+          t.body_number
+        FROM ride_requests r
+        LEFT JOIN drivers d ON d.driver_id = r.assigned_driver_id
+        LEFT JOIN users u ON u.user_id = d.user_id
+        LEFT JOIN tricycles t ON t.driver_id = d.driver_id
+        WHERE r.commuter_id = ?
+        ORDER BY r.request_time DESC
+        LIMIT ? OFFSET ?
+      `,
+      [userId, Number(limit) || 20, Number(offset) || 0]
+    );
+
+    const rides = rows.map((row) => ({
+      id: row.request_id,
+      pickupLocation: row.pickup_location,
+      dropoffLocation: row.dropoff_location,
+      fareAmount: row.fare_amount,
+      requestTime: row.request_time,
+      status: row.status,
+      driver: {
+        id: row.driver_id,
+        name: row.driver_name,
+        licenseNumber: row.license_number,
+        plateNumber: row.plate_number,
+        bodyNumber: row.body_number,
+      },
+    }));
+
+    res.json({ rides });
+  } catch (error) {
+    console.error('Ride history error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 module.exports = router;
