@@ -25,10 +25,11 @@ router.get('/latest', requireAuth, async (req, res) => {
 
 // Admin ONLY: update the fare settings
 router.post('/update', requireAuth, async (req, res) => {
-  if (req.session.user.role !== 'admin') {
+  const role = req.session.accountRole || req.session.role;
+  if (role !== 'admin' && role !== 'lgu') {
     return res.status(403).json({ error: 'Admin access required' });
   }
-  
+
   const { base_fare, base_distance_km, per_km_rate } = req.body;
   if (!base_fare || !base_distance_km || !per_km_rate) {
     return res.status(400).json({ error: 'Missing fare parameters' });
@@ -38,11 +39,32 @@ router.post('/update', requireAuth, async (req, res) => {
     await db.query(
       `INSERT INTO fare_settings (base_fare, base_distance_km, per_km_rate, set_by_admin_id)
        VALUES (?, ?, ?, ?)`,
-      [base_fare, base_distance_km, per_km_rate, req.session.user.user_id]
+      [base_fare, base_distance_km, per_km_rate, req.session.userId]
     );
     res.json({ success: true, message: 'Fare settings updated.' });
   } catch (error) {
     console.error('Error updating fare:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Admin: full fare history
+router.get('/history', requireAuth, async (req, res) => {
+  const role = req.session.accountRole || req.session.role;
+  if (role !== 'admin' && role !== 'lgu') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  try {
+    const [rows] = await db.query(
+      `SELECT fs.id, fs.base_fare, fs.base_distance_km, fs.per_km_rate,
+              fs.effective_date, u.full_name AS set_by_name
+       FROM fare_settings fs
+       LEFT JOIN users u ON u.user_id = fs.set_by_admin_id
+       ORDER BY fs.effective_date DESC`
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Error fetching fare history:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });

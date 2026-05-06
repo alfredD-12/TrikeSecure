@@ -192,6 +192,44 @@ app.get('/api/geocode/search', async (req, res) => {
   }
 });
 
+// OSRM route proxy — browser can't call OSRM directly (CORS); we proxy server-side
+app.get('/api/route', async (req, res) => {
+  const { startLng, startLat, endLng, endLat } = req.query;
+  if (!startLng || !startLat || !endLng || !endLat) {
+    return res.status(400).json({ message: 'Missing coordinates.' });
+  }
+
+  const straight = [[Number(startLat), Number(startLng)], [Number(endLat), Number(endLng)]];
+
+  try {
+    const osrmUrl =
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${startLng},${startLat};${endLng},${endLat}` +
+      `?overview=full&geometries=geojson`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+
+    const response = await fetch(osrmUrl, { signal: controller.signal });
+    clearTimeout(timer);
+
+    const data = await response.json();
+
+    if (data.routes?.[0]?.geometry?.coordinates?.length) {
+      // OSRM returns [lng, lat] — flip to [lat, lng] for Leaflet
+      const coords = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      return res.json({ coords });
+    }
+
+    return res.json({ coords: straight });
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error('OSRM proxy error:', err.message);
+    }
+    return res.json({ coords: straight }); // graceful fallback
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });

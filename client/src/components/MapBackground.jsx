@@ -113,11 +113,20 @@ const destIcon = L.divIcon({
   popupAnchor: [0, -66],
 });
 
-// Returns a straight-line [lat,lng] pair for the route polyline.
-// Previously used OSRM but the public demo server blocks cross-origin browser
-// requests; haversine straight-line is sufficient for the route overlay.
-function fetchRoute(startLng, startLat, endLng, endLat) {
-  return Promise.resolve([[startLat, startLng], [endLat, endLng]]);
+// Fetches a road-following route via the backend OSRM proxy (/api/route).
+// The public OSRM demo server blocks browser cross-origin requests, so we
+// proxy through our own server. Falls back to a straight line on failure.
+async function fetchRoute(startLng, startLat, endLng, endLat, signal) {
+  const straight = [[startLat, startLng], [endLat, endLng]];
+  try {
+    const params = new URLSearchParams({ startLng, startLat, endLng, endLat });
+    const res = await fetch(`${API_URL}/route?${params}`, { signal });
+    if (!res.ok) return straight;
+    const data = await res.json();
+    return data.coords?.length >= 2 ? data.coords : straight;
+  } catch {
+    return straight;
+  }
 }
 
 // Draws OSRM road route between pickup and destination
