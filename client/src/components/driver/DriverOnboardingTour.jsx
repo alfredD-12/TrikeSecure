@@ -151,7 +151,7 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-export default function DriverOnboardingTour({ open, onClose, onStepChange, isOnboardingLocked = false, showPresidentTab = false }) {
+export default function DriverOnboardingTour({ open, onClose, onStepChange, storageKey = 'ts_driver_tour_done', isOnboardingLocked = false, showPresidentTab = false }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [layout, setLayout] = useState(null);
   const tourSteps = useMemo(() => TOUR_STEPS.filter((item) => {
@@ -234,7 +234,7 @@ export default function DriverOnboardingTour({ open, onClose, onStepChange, isOn
 
   function finishTour() {
     try {
-      localStorage.setItem('ts_driver_tour_done', '1');
+      localStorage.setItem(storageKey, '1');
     } catch (error) {
       console.warn('Could not save driver tour status.', error);
     }
