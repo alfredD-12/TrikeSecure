@@ -42,7 +42,8 @@ router.get('/overview', async (_req, res) => {
         (SELECT COUNT(*) FROM tricycles WHERE status = 'approved') AS activeTricycles,
         (SELECT COUNT(*) FROM ride_requests WHERE status IN ('waiting', 'accepted', 'arrived', 'in_progress')) AS liveRides,
         (SELECT COUNT(*) FROM ride_requests WHERE DATE(request_time) = CURDATE()) AS todaysRides,
-        (SELECT COUNT(*) FROM complaints WHERE status = 'pending') AS openComplaints
+        (SELECT COUNT(*) FROM complaints WHERE status = 'pending') AS openComplaints,
+        (SELECT COUNT(*) FROM sos_alerts WHERE status = 'active') AS activeSosAlerts
     `);
 
     const [recentActivity] = await db.query(`
@@ -740,6 +741,88 @@ router.patch('/complaints/:id/resolve', async (req, res) => {
 });
 
 /* ── GET /admin/ratings — All ride ratings ── */
+router.get('/sos-alerts', async (req, res) => {
+  const statusFilter = normalizeOptionalText(req.query.status);
+
+  if (statusFilter && !['active', 'resolved'].includes(statusFilter)) {
+    return res.status(400).json({ message: 'Invalid SOS alert status.' });
+  }
+
+  try {
+    const [rows] = await db.query(
+      `
+        SELECT
+          s.alert_id AS alertId,
+          s.user_id AS userId,
+          s.user_role AS userRole,
+          sender.full_name AS senderName,
+          sender.email AS senderEmail,
+          s.latitude,
+          s.longitude,
+          s.ride_id AS rideId,
+          s.message,
+          s.created_at AS createdAt,
+          s.status,
+          r.status AS rideStatus,
+          r.pickup_location AS pickupLocation,
+          r.dropoff_location AS dropoffLocation,
+          commuter.full_name AS commuterName,
+          driver_user.full_name AS driverName,
+          t.body_number AS bodyNumber,
+          t.plate_number AS plateNumber,
+          td.toda_name AS todaName
+        FROM sos_alerts s
+        INNER JOIN users sender ON sender.user_id = s.user_id
+        LEFT JOIN ride_requests r ON r.request_id = s.ride_id
+        LEFT JOIN users commuter ON commuter.user_id = r.commuter_id
+        LEFT JOIN drivers d ON d.driver_id = r.assigned_driver_id
+        LEFT JOIN users driver_user ON driver_user.user_id = d.user_id
+        LEFT JOIN tricycles t ON t.driver_id = d.driver_id AND t.status = 'approved'
+        LEFT JOIN todas td ON td.toda_id = d.toda_id
+        WHERE (? IS NULL OR s.status = ?)
+        ORDER BY
+          CASE s.status WHEN 'active' THEN 0 ELSE 1 END,
+          s.created_at DESC
+        LIMIT 200
+      `,
+      [statusFilter, statusFilter],
+    );
+
+    return res.json(rows);
+  } catch (error) {
+    console.error('Admin SOS alert list error:', error);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+router.patch('/sos-alerts/:id/resolve', async (req, res) => {
+  const alertId = parsePositiveInt(req.params.id);
+
+  if (!alertId) {
+    return res.status(400).json({ message: 'Invalid SOS alert ID.' });
+  }
+
+  try {
+    const [result] = await db.query(
+      `
+        UPDATE sos_alerts
+        SET status = 'resolved'
+        WHERE alert_id = ? AND status <> 'resolved'
+      `,
+      [alertId],
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'SOS alert not found or already resolved.' });
+    }
+
+    return res.json({ message: 'SOS alert marked as resolved.' });
+  } catch (error) {
+    console.error('Admin SOS alert resolve error:', error);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 router.get('/ratings', async (req, res) => {
   try {
     const [ratings] = await db.query(

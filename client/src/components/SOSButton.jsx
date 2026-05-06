@@ -5,7 +5,7 @@ const COUNTDOWN_SECONDS = 5;
 const CIRCLE_RADIUS = 54;
 const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS;
 
-export default function SOSButton() {
+export default function SOSButton({ rideId = null }) {
   const [phase, setPhase] = useState('idle'); // idle | countdown | sending | sent | error
   const [secondsLeft, setSecondsLeft] = useState(COUNTDOWN_SECONDS);
   const [sliderX, setSliderX] = useState(0);
@@ -21,8 +21,54 @@ export default function SOSButton() {
   const thumbSize = 56;
   const cancelThreshold = sliderWidth > 0 ? sliderWidth - thumbSize - 8 : 200;
 
+  const resetAfter = useCallback((delay) => {
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setPhase('idle');
+      setSecondsLeft(COUNTDOWN_SECONDS);
+      setSliderX(0);
+    }, delay);
+  }, []);
+
+  const fireAlert = useCallback(async () => {
+    clearInterval(countdownRef.current);
+    setPhase('sending');
+
+    try {
+      if (!navigator.geolocation?.getCurrentPosition) {
+        throw new Error('Geolocation unavailable');
+      }
+
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 5000,
+        });
+      });
+
+      const { latitude, longitude } = position.coords;
+      await triggerSOS(latitude, longitude, rideId, 'Emergency SOS activated');
+      setPhase('sent');
+      resetAfter(4000);
+    } catch (err) {
+      console.error('SOS Error:', err);
+
+      try {
+        await triggerSOS(null, null, rideId, 'Emergency SOS activated - GPS unavailable');
+        setPhase('sent');
+        resetAfter(4000);
+      } catch {
+        setPhase('error');
+        resetAfter(3000);
+      }
+    }
+  }, [resetAfter, rideId]);
+
   // Start the countdown
   const startCountdown = useCallback(() => {
+    clearInterval(countdownRef.current);
+    clearTimeout(timerRef.current);
     setPhase('countdown');
     setSecondsLeft(COUNTDOWN_SECONDS);
     setSliderX(0);
@@ -36,7 +82,7 @@ export default function SOSButton() {
         fireAlert();
       }
     }, 1000);
-  }, []);
+  }, [fireAlert]);
 
   // Cancel the countdown
   const cancelCountdown = useCallback(() => {
@@ -45,49 +91,6 @@ export default function SOSButton() {
     setSecondsLeft(COUNTDOWN_SECONDS);
     setSliderX(0);
   }, []);
-
-  // Fire the SOS alert
-  async function fireAlert() {
-    clearInterval(countdownRef.current);
-    setPhase('sending');
-
-    try {
-      const position = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 5000,
-        });
-      });
-
-      const { latitude, longitude } = position.coords;
-      await triggerSOS(latitude, longitude, null, 'Emergency SOS activated');
-      setPhase('sent');
-
-      // Auto-dismiss after 4 seconds
-      timerRef.current = setTimeout(() => {
-        setPhase('idle');
-        setSecondsLeft(COUNTDOWN_SECONDS);
-      }, 4000);
-    } catch (err) {
-      console.error('SOS Error:', err);
-      // Try sending without GPS as fallback
-      try {
-        await triggerSOS(0, 0, null, 'Emergency SOS (GPS unavailable)');
-        setPhase('sent');
-        timerRef.current = setTimeout(() => {
-          setPhase('idle');
-          setSecondsLeft(COUNTDOWN_SECONDS);
-        }, 4000);
-      } catch {
-        setPhase('error');
-        timerRef.current = setTimeout(() => {
-          setPhase('idle');
-          setSecondsLeft(COUNTDOWN_SECONDS);
-        }, 3000);
-      }
-    }
-  }
 
   // Cleanup
   useEffect(() => {

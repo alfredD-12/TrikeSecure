@@ -8,13 +8,25 @@ router.post('/', requireAuth, async (req, res) => {
   const { latitude, longitude, rideId, message } = req.body;
   const accountRole = getAccountRole(req);
 
-  if (!latitude || !longitude) {
-    return res.status(400).json({ message: 'Location coordinates are required.' });
-  }
-
   if (!['commuter', 'driver'].includes(accountRole)) {
     return res.status(403).json({ message: 'Only drivers and commuters can send SOS alerts.' });
   }
+
+  const hasLatitude = latitude !== undefined && latitude !== null && latitude !== '';
+  const hasLongitude = longitude !== undefined && longitude !== null && longitude !== '';
+  const parsedLatitude = hasLatitude ? Number(latitude) : null;
+  const parsedLongitude = hasLongitude ? Number(longitude) : null;
+
+  if (
+    (hasLatitude && (!Number.isFinite(parsedLatitude) || parsedLatitude < -90 || parsedLatitude > 90))
+    || (hasLongitude && (!Number.isFinite(parsedLongitude) || parsedLongitude < -180 || parsedLongitude > 180))
+    || (hasLatitude !== hasLongitude)
+  ) {
+    return res.status(400).json({ message: 'Invalid location coordinates.' });
+  }
+
+  const parsedRideId = Number.parseInt(rideId, 10);
+  const normalizedRideId = Number.isInteger(parsedRideId) && parsedRideId > 0 ? parsedRideId : null;
 
   try {
     const [result] = await db.query(
@@ -25,14 +37,18 @@ router.post('/', requireAuth, async (req, res) => {
       [
         req.session.userId,
         accountRole,
-        parseFloat(latitude),
-        parseFloat(longitude),
-        rideId || null,
+        parsedLatitude,
+        parsedLongitude,
+        normalizedRideId,
         message || null,
       ],
     );
 
-    console.log(`SOS ALERT #${result.insertId} from ${accountRole} ${req.session.username} at (${latitude}, ${longitude})`);
+    console.log(
+      `SOS ALERT #${result.insertId} from ${accountRole} ${req.session.username}`
+      + (normalizedRideId ? ` ride #${normalizedRideId}` : '')
+      + (parsedLatitude !== null ? ` at (${parsedLatitude}, ${parsedLongitude})` : ' without GPS coordinates')
+    );
 
     return res.status(201).json({
       alertId: result.insertId,

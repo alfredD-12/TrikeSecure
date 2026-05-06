@@ -2769,7 +2769,7 @@ export default function CommuterView({ mapRef }) {
         </div>
       </BottomSheet>
 
-      {scanResult && <SOSButton />}
+      {activeRide && <SOSButton rideId={activeRide.requestId || activeRideId} />}
 
       {/* Bottom Nav */}
       <nav className="v-nav">

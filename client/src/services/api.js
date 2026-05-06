@@ -394,6 +394,17 @@ export async function resolveAdminComplaint(complaintId) {
   return apiFetch(`/admin/complaints/${complaintId}/resolve`, { method: 'PATCH' });
 }
 
+export async function getAdminSosAlerts(status = null) {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch(`/admin/sos-alerts${suffix}`);
+}
+
+export async function resolveAdminSosAlert(alertId) {
+  return apiFetch(`/admin/sos-alerts/${alertId}/resolve`, { method: 'PATCH' });
+}
+
 export async function getAdminRatings() {
   return apiFetch(`/admin/ratings`);
 }

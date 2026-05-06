@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { createElement, useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, Shield, AlertTriangle, Route,
   LogOut, Menu, X, Bell, User as UserIcon, Sun, Moon,
-  TrendingUp, FileCheck, Car, AlertOctagon, Settings2, Star
+  TrendingUp, Car, AlertOctagon, Settings2, Star, Siren
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { logout } from '../services/api';
@@ -12,6 +12,7 @@ import FareSettingsTab from '../components/admin/FareSettingsTab';
 import RatingsTab from '../components/admin/RatingsTab';
 import LiveRidesTab from '../components/admin/LiveRidesTab';
 import ComplaintsTab from '../components/admin/ComplaintsTab';
+import SosAlertsTab from '../components/admin/SosAlertsTab';
 
 function GlassCard({ children, className = '', dm = true }) {
   return (
@@ -34,6 +35,7 @@ function OverviewTab({ dm, onSelectTab }) {
     { label: 'Franchises', value: 'Approve', icon: Shield, color: '#f59e0b', tab: 'franchises' },
     { label: 'Live Rides', value: 'Monitor', icon: Car, color: '#22c55e', tab: 'rides' },
     { label: 'Complaints', value: 'Track', icon: AlertOctagon, color: '#ef4444', tab: 'complaints' },
+    { label: 'SOS Alerts', value: 'Respond', icon: Siren, color: '#dc2626', tab: 'sos' },
   ];
 
   return (
@@ -75,11 +77,11 @@ function OverviewTab({ dm, onSelectTab }) {
   );
 }
 
-function PlaceholderTab({ dm, icon: Icon, title, description }) {
+function PlaceholderTab({ dm, icon, title, description }) {
   return (
     <GlassCard dm={dm} className="py-16 text-center">
       <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-red-400/20 bg-red-500/10">
-        <Icon size={28} className="text-red-400" />
+        {createElement(icon, { size: 28, className: 'text-red-400' })}
       </div>
       <h3 className={`mb-2 text-lg font-black ${dm ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
       <p className={`mx-auto max-w-xl text-sm font-semibold ${dm ? 'text-gray-500' : 'text-gray-400'}`}>{description}</p>
@@ -103,6 +105,7 @@ export default function AdminView() {
     { id: 'drivers', label: 'Drivers & Tricycles', icon: Users },
     { id: 'franchises', label: 'Franchises', icon: Shield },
     { id: 'rides', label: 'Live Rides', icon: Route },
+    { id: 'sos', label: 'SOS Alerts', icon: Siren },
     { id: 'complaints', label: 'Complaints', icon: AlertTriangle },
     { id: 'fare_settings', label: 'Fare Settings', icon: Settings2 },
     { id: 'ratings', label: 'Ride Ratings', icon: Star },
@@ -191,6 +194,7 @@ export default function AdminView() {
             {activeTab === 'drivers'    && <DriversTricyclesTab dm={dm} />}
             {activeTab === 'franchises' && <FranchisesTab dm={dm} />}
             {activeTab === 'rides'      && <LiveRidesTab dm={dm} />}
+            {activeTab === 'sos'        && <SosAlertsTab dm={dm} />}
             {activeTab === 'complaints' && <ComplaintsTab dm={dm} />}
             {activeTab === 'fare_settings' && <FareSettingsTab dm={dm} />}
             {activeTab === 'ratings'    && <RatingsTab dm={dm} />}

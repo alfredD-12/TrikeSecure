@@ -1887,7 +1887,7 @@ export default function DriverView({ mapRef }) {
         </div>
       </BottomSheet>
 
-      {!isOnboardingLocked && <SOSButton />}
+      {!isOnboardingLocked && <SOSButton rideId={activeDriverRide?.requestId || null} />}
 
       {/* Bottom Nav */}
       <nav className="v-nav">
