@@ -129,6 +129,54 @@ async function fetchRoute(startLng, startLat, endLng, endLat, signal) {
   }
 }
 
+// Fetches a multi-stop OSRM route from an array of { lng, lat } waypoints.
+async function fetchMultiRoute(waypoints, signal) {
+  if (!waypoints || waypoints.length < 2) return null;
+  const coordsStr = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
+  const [f, l] = [waypoints[0], waypoints[waypoints.length - 1]];
+  const straight = [[f.lat, f.lng], [l.lat, l.lng]];
+  try {
+    const res = await fetch(`${API_URL}/route?waypoints=${encodeURIComponent(coordsStr)}`, { signal });
+    if (!res.ok) return straight;
+    const data = await res.json();
+    return data.coords?.length >= 2 ? data.coords : straight;
+  } catch {
+    return straight;
+  }
+}
+
+// Greedy nearest-neighbor ordering of driver stops (client-side mirror of server algorithm).
+// Respects pickup-before-dropoff constraint (interleaved allowed).
+function buildDriverWaypoints(rides, driverPos) {
+  const pickedUp = new Set(rides.filter((r) => r.status === 'in_progress').map((r) => r.requestId));
+  let remaining = [];
+  for (const ride of rides) {
+    if (['accepted', 'arrived'].includes(ride.status) && ride.pickupLat != null) {
+      remaining.push({ type: 'pickup', requestId: ride.requestId, lat: Number(ride.pickupLat), lng: Number(ride.pickupLng) });
+    }
+    if (ride.dropoffLat != null) {
+      remaining.push({ type: 'dropoff', requestId: ride.requestId, lat: Number(ride.dropoffLat), lng: Number(ride.dropoffLng) });
+    }
+  }
+  const result = [];
+  let cur = driverPos || (remaining[0] ? { lat: remaining[0].lat, lng: remaining[0].lng } : null);
+  while (remaining.length > 0 && cur) {
+    const eligible = remaining.filter((s) => s.type === 'pickup' || pickedUp.has(s.requestId));
+    if (!eligible.length) break;
+    let nearest = null, minD = Infinity;
+    for (const s of eligible) {
+      const d = Math.hypot(s.lat - cur.lat, s.lng - cur.lng);
+      if (d < minD) { minD = d; nearest = s; }
+    }
+    if (!nearest) break;
+    result.push(nearest);
+    remaining = remaining.filter((s) => !(s.type === nearest.type && s.requestId === nearest.requestId));
+    if (nearest.type === 'pickup') pickedUp.add(nearest.requestId);
+    cur = { lat: nearest.lat, lng: nearest.lng };
+  }
+  return result;
+}
+
 // Draws OSRM road route between pickup and destination
 function RouteLayer() {
   const { userPickup, destinationPin, activeCommuterRide, activeDriverRide } = useApp();
@@ -335,7 +383,7 @@ function FlyToPoint() {
 
 // Self-contained commuter-request pin layer with accept action
 function CommuterRequestMarkers() {
-  const { pendingRides, setPendingRides, activeDriverRide, setActiveDriverRide } = useApp();
+  const { pendingRides, setPendingRides, activeDriverRides, setActiveDriverRides } = useApp();
   const [acceptingId, setAcceptingId] = useState(null);
   const [errorId, setErrorId] = useState(null);
 
@@ -366,9 +414,9 @@ function CommuterRequestMarkers() {
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         if (data?.ride) {
-          setActiveDriverRide(data.ride);
+          setActiveDriverRides((prev) => [...prev.filter((r) => r.requestId !== data.ride.requestId), data.ride]);
         }
-        setPendingRides(prev => prev.filter(r => r.request_id !== rideId));
+        setPendingRides((prev) => prev.filter((r) => r.request_id !== rideId));
       } else {
         setErrorId(rideId);
         setTimeout(() => setErrorId(null), 3000);
@@ -381,8 +429,8 @@ function CommuterRequestMarkers() {
     }
   }
 
-  if (activeDriverRide) {
-    return null;
+  if (activeDriverRides.length >= 6) {
+    return null; // at tricycle capacity — hide map accept pins
   }
 
   return (
@@ -471,56 +519,86 @@ function getActiveMapRide(view, activeDriverRide, activeCommuterRide) {
 }
 
 function ActiveRidePickupMarker() {
-  const { view, activeDriverRide, activeCommuterRide } = useApp();
-  const ride = getActiveMapRide(view, activeDriverRide, activeCommuterRide);
-  const isDriver = view === 'driver';
+  const { view, activeDriverRides, activeCommuterRide } = useApp();
 
-  const canShowPickup = ride
-    && ride.pickupLat != null
-    && ride.pickupLng != null
-    && (!isDriver || ['accepted', 'arrived'].includes(ride.status));
-
-  if (!canShowPickup) {
-    return null;
+  if (view === 'commuter') {
+    // Commuter view: show single pickup marker
+    const ride = activeCommuterRide;
+    if (!ride || ride.pickupLat == null || ride.pickupLng == null) return null;
+    return (
+      <Marker position={[ride.pickupLat, ride.pickupLng]} icon={pickupIcon}>
+        <Popup>
+          <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '190px' }}>
+            <div style={{ fontWeight: 700, color: '#2563eb', fontSize: '13px', marginBottom: '2px' }}>Pickup Point</div>
+            <div style={{ color: '#1f2937', fontSize: '13px', fontWeight: 700 }}>{ride.commuter?.fullName || 'Commuter'}</div>
+            <div style={{ color: '#6b7280', fontSize: '12px', marginTop: '4px' }}>{ride.pickupLocation || 'Pickup location'}</div>
+          </div>
+        </Popup>
+      </Marker>
+    );
   }
 
+  // Driver view: show pickup markers for all rides not yet in_progress
+  const pickupRides = activeDriverRides.filter(
+    (r) => ['accepted', 'arrived'].includes(r.status) && r.pickupLat != null && r.pickupLng != null,
+  );
+  if (pickupRides.length === 0) return null;
+
   return (
-    <Marker position={[ride.pickupLat, ride.pickupLng]} icon={pickupIcon}>
-      <Popup>
-        <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '190px' }}>
-          <div style={{ fontWeight: 700, color: '#2563eb', fontSize: '13px', marginBottom: '2px' }}>
-            {isDriver ? 'Exact Pickup' : 'Pickup Point'}
-          </div>
-          <div style={{ color: '#1f2937', fontSize: '13px', fontWeight: 700 }}>{ride.commuter?.fullName || 'Commuter'}</div>
-          <div style={{ color: '#6b7280', fontSize: '12px', marginTop: '4px' }}>{ride.pickupLocation || 'Pickup location'}</div>
-          {isDriver && (
-            <div style={{ color: '#9ca3af', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
-              Shared only while pickup is active.
+    <>
+      {pickupRides.map((ride, idx) => (
+        <Marker key={`pickup-${ride.requestId}`} position={[ride.pickupLat, ride.pickupLng]} icon={pickupIcon}>
+          <Popup>
+            <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '190px' }}>
+              <div style={{ fontWeight: 700, color: '#2563eb', fontSize: '13px', marginBottom: '2px' }}>
+                Pickup {String.fromCharCode(65 + idx)}
+              </div>
+              <div style={{ color: '#1f2937', fontSize: '13px', fontWeight: 700 }}>{ride.commuter?.fullName || 'Commuter'}</div>
+              <div style={{ color: '#6b7280', fontSize: '12px', marginTop: '4px' }}>{ride.pickupLocation || 'Pickup location'}</div>
+              <div style={{ color: '#9ca3af', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>Exact pickup — shared after acceptance.</div>
             </div>
-          )}
-        </div>
-      </Popup>
-    </Marker>
+          </Popup>
+        </Marker>
+      ))}
+    </>
   );
 }
 
 function ActiveRideDropoffMarker() {
-  const { view, activeDriverRide, activeCommuterRide } = useApp();
-  const ride = getActiveMapRide(view, activeDriverRide, activeCommuterRide);
+  const { view, activeDriverRides, activeCommuterRide } = useApp();
 
-  if (!ride || ride.dropoffLat == null || ride.dropoffLng == null) {
-    return null;
+  if (view === 'commuter') {
+    const ride = activeCommuterRide;
+    if (!ride || ride.dropoffLat == null || ride.dropoffLng == null) return null;
+    return (
+      <Marker position={[ride.dropoffLat, ride.dropoffLng]} icon={destIcon}>
+        <Popup>
+          <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '190px' }}>
+            <div style={{ fontWeight: 700, color: '#dc2626', fontSize: '13px', marginBottom: '2px' }}>Dropoff</div>
+            <div style={{ color: '#6b7280', fontSize: '12px' }}>{ride.dropoffLocation || 'Destination'}</div>
+          </div>
+        </Popup>
+      </Marker>
+    );
   }
 
+  // Driver view: show dropoff markers for all rides
+  const dropoffRides = activeDriverRides.filter((r) => r.dropoffLat != null && r.dropoffLng != null);
+  if (dropoffRides.length === 0) return null;
+
   return (
-    <Marker position={[ride.dropoffLat, ride.dropoffLng]} icon={destIcon}>
-      <Popup>
-        <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '190px' }}>
-          <div style={{ fontWeight: 700, color: '#dc2626', fontSize: '13px', marginBottom: '2px' }}>Dropoff</div>
-          <div style={{ color: '#6b7280', fontSize: '12px' }}>{ride.dropoffLocation || 'Destination'}</div>
-        </div>
-      </Popup>
-    </Marker>
+    <>
+      {dropoffRides.map((ride, idx) => (
+        <Marker key={`dropoff-${ride.requestId}`} position={[ride.dropoffLat, ride.dropoffLng]} icon={destIcon}>
+          <Popup>
+            <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '190px' }}>
+              <div style={{ fontWeight: 700, color: '#dc2626', fontSize: '13px', marginBottom: '2px' }}>Dropoff {String.fromCharCode(65 + idx)}</div>
+              <div style={{ color: '#6b7280', fontSize: '12px' }}>{ride.dropoffLocation || 'Destination'}</div>
+            </div>
+          </Popup>
+        </Marker>
+      ))}
+    </>
   );
 }
 
@@ -548,38 +626,12 @@ function ActiveRideDriverMarker() {
 }
 
 function ActiveRideRouteLayer() {
-  const { view, activeDriverRide, activeCommuterRide, liveLocation } = useApp();
+  const { view, activeDriverRides, activeCommuterRide, liveLocation } = useApp();
   const map = useMap();
   const polylineRef = useRef(null);
   const lastFitKeyRef = useRef(null);
-  const ride = getActiveMapRide(view, activeDriverRide, activeCommuterRide);
 
   const isDriver = view === 'driver';
-  const routeStart = (() => {
-    if (!ride) return null;
-    if (isDriver && ['accepted', 'arrived'].includes(ride.status) && liveLocation) {
-      return liveLocation;
-    }
-    if (isDriver && ride.status === 'in_progress' && liveLocation) {
-      return liveLocation;
-    }
-    if (ride.pickupLat != null && ride.pickupLng != null) {
-      return { lat: ride.pickupLat, lng: ride.pickupLng };
-    }
-    return null;
-  })();
-
-  const routeEnd = (() => {
-    if (!ride) return null;
-    if (isDriver && ['accepted', 'arrived'].includes(ride.status)) {
-      return ride.pickupLat != null && ride.pickupLng != null
-        ? { lat: ride.pickupLat, lng: ride.pickupLng }
-        : null;
-    }
-    return ride.dropoffLat != null && ride.dropoffLng != null
-      ? { lat: ride.dropoffLat, lng: ride.dropoffLng }
-      : null;
-  })();
 
   useEffect(() => {
     if (polylineRef.current) {
@@ -587,31 +639,60 @@ function ActiveRideRouteLayer() {
       polylineRef.current = null;
     }
 
-    if (!ride || !routeStart || !routeEnd) {
-      return undefined;
+    // ── Commuter view: single-ride route (pickup → dropoff) ─────────────
+    if (!isDriver) {
+      const ride = activeCommuterRide;
+      if (!ride) return undefined;
+      const start = ride.pickupLat != null ? { lat: ride.pickupLat, lng: ride.pickupLng } : null;
+      const end = ride.dropoffLat != null ? { lat: ride.dropoffLat, lng: ride.dropoffLng } : null;
+      if (!start || !end) return undefined;
+
+      let isMounted = true;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+      fetchRoute(start.lng, start.lat, end.lng, end.lat, controller.signal).then((latLngs) => {
+        clearTimeout(timeoutId);
+        if (!isMounted || !map || !map.getContainer()) return;
+        polylineRef.current = L.polyline(latLngs, { color: '#16a34a', weight: 6, opacity: 0.9, lineJoin: 'round', lineCap: 'round' }).addTo(map);
+        const fitKey = `commuter-${ride.requestId}-${ride.status}`;
+        if (lastFitKeyRef.current !== fitKey) {
+          lastFitKeyRef.current = fitKey;
+          map.fitBounds(polylineRef.current.getBounds(), { padding: [70, 70] });
+        }
+      }).catch(() => { clearTimeout(timeoutId); });
+
+      return () => { isMounted = false; controller.abort(); clearTimeout(timeoutId); if (polylineRef.current) { polylineRef.current.remove(); polylineRef.current = null; } };
     }
+
+    // ── Driver view: multi-stop optimized route ─────────────────────────
+    if (activeDriverRides.length === 0) return undefined;
+
+    const driverPos = liveLocation?.lat != null ? { lat: liveLocation.lat, lng: liveLocation.lng } : null;
+    const stops = buildDriverWaypoints(activeDriverRides, driverPos);
+    if (stops.length === 0) return undefined;
+
+    // Build full waypoints: driver position + ordered stops
+    const allWaypoints = driverPos ? [driverPos, ...stops] : stops;
+    if (allWaypoints.length < 2) return undefined;
 
     let isMounted = true;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 7000);
 
-    fetchRoute(
-      routeStart.lng, routeStart.lat,
-      routeEnd.lng, routeEnd.lat,
-      controller.signal
-    ).then(latLngs => {
+    fetchMultiRoute(allWaypoints, controller.signal).then((latLngs) => {
       clearTimeout(timeoutId);
       if (!isMounted || !map || !map.getContainer()) return;
-
       polylineRef.current = L.polyline(latLngs, {
-        color: isDriver && ['accepted', 'arrived'].includes(ride.status) ? '#2563eb' : '#16a34a',
+        color: '#2563eb',
         weight: 6,
-        opacity: 0.9,
+        opacity: 0.85,
         lineJoin: 'round',
         lineCap: 'round',
+        dashArray: activeDriverRides.some((r) => r.status === 'in_progress') ? null : '10, 6',
       }).addTo(map);
 
-      const fitKey = `${view}-${ride.requestId}-${ride.status}`;
+      const fitKey = `driver-${activeDriverRides.map((r) => `${r.requestId}:${r.status}`).join('|')}`;
       if (lastFitKeyRef.current !== fitKey) {
         lastFitKeyRef.current = fitKey;
         map.fitBounds(polylineRef.current.getBounds(), { padding: [70, 70] });
@@ -622,20 +703,17 @@ function ActiveRideRouteLayer() {
       isMounted = false;
       controller.abort();
       clearTimeout(timeoutId);
-      if (polylineRef.current) {
-        polylineRef.current.remove();
-        polylineRef.current = null;
-      }
+      if (polylineRef.current) { polylineRef.current.remove(); polylineRef.current = null; }
     };
-  }, [view, ride, routeStart, routeEnd, isDriver, map]);
+  }, [view, isDriver, activeDriverRides, activeCommuterRide, liveLocation, map]);
 
   return null;
 }
 
 export default function MapBackground({ mapRef }) {
-  const { darkMode, userPickup, destinationPin, pinTarget, view, activeDriverRide, activeCommuterRide } = useApp();
+  const { darkMode, userPickup, destinationPin, pinTarget, view, activeDriverRides, activeCommuterRide } = useApp();
   const isCommuter = view === 'commuter';
-  const hasActiveMapRide = Boolean(getActiveMapRide(view, activeDriverRide, activeCommuterRide));
+  const hasActiveMapRide = Boolean(view === 'commuter' ? activeCommuterRide : activeDriverRides.length > 0);
 
   return (
     <div id="map-container" style={{ cursor: pinTarget ? 'crosshair' : 'grab' }}>
@@ -680,8 +758,8 @@ export default function MapBackground({ mapRef }) {
             </Popup>
           </Marker>
         )}
-        {/* Trike terminal marker — only shown in driver view */}
-        {!isCommuter && !activeDriverRide && (
+        {/* Trike terminal marker — only shown in driver view when no rides active */}
+        {!isCommuter && activeDriverRides.length === 0 && (
           <Marker position={DEFAULT_CENTER} icon={trikeIcon}>
           <Popup>
             <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px', minWidth: '180px' }}>

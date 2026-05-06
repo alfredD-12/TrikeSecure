@@ -255,7 +255,15 @@ async function transitionAssignedDriverRide(req, res, options) {
     );
 
     if (toStatus === 'completed') {
-      driverLocations.delete(driverContext.driverId);
+      // Only clear the in-memory driver location when this was the last active ride
+      const [remaining] = await conn.query(
+        `SELECT COUNT(*) AS cnt FROM ride_requests
+         WHERE assigned_driver_id = ? AND status IN ('accepted', 'arrived', 'in_progress') AND request_id <> ?`,
+        [driverContext.driverId, requestId],
+      );
+      if (remaining[0].cnt === 0) {
+        driverLocations.delete(driverContext.driverId);
+      }
     }
 
     const ride = await getRideDetails(conn, requestId);
@@ -392,14 +400,13 @@ router.get('/active', requireAuth, async (req, res) => {
           SELECT request_id
           FROM ride_requests
           WHERE assigned_driver_id = ? AND status IN ('accepted', 'arrived', 'in_progress')
-          ORDER BY request_time DESC
-          LIMIT 1
+          ORDER BY request_time ASC
         `,
         [driverContext.driverId],
       );
 
-      const ride = rows.length > 0 ? await getRideDetails(db, rows[0].request_id) : null;
-      return res.json({ ride });
+      const rides = await Promise.all(rows.map((row) => getRideDetails(db, row.request_id)));
+      return res.json({ rides: rides.filter(Boolean) });
     }
 
     return res.status(403).json({ message: 'Only commuters and drivers can view active rides.' });
@@ -589,6 +596,92 @@ router.get('/nearby', requireAuth, requireRole('driver'), async (req, res) => {
   }
 });
 
+// Greedy nearest-neighbor PDP: respects pickup-before-dropoff constraint
+function buildOrderedWaypoints(rides, startPos) {
+  const LABELS = 'ABCDEFGHIJKLMNOP';
+  const pickedUp = new Set(
+    rides.filter((r) => r.status === 'in_progress').map((r) => r.requestId),
+  );
+
+  let remaining = [];
+  for (const ride of rides) {
+    if (['accepted', 'arrived'].includes(ride.status) && ride.pickupLat != null) {
+      remaining.push({ type: 'pickup', requestId: ride.requestId, lat: Number(ride.pickupLat), lng: Number(ride.pickupLng), ride });
+    }
+    if (ride.dropoffLat != null) {
+      remaining.push({ type: 'dropoff', requestId: ride.requestId, lat: Number(ride.dropoffLat), lng: Number(ride.dropoffLng), ride });
+    }
+  }
+
+  const result = [];
+  let cur = startPos || (remaining[0] ? { lat: remaining[0].lat, lng: remaining[0].lng } : null);
+
+  while (remaining.length > 0 && cur) {
+    const eligible = remaining.filter((s) => s.type === 'pickup' || pickedUp.has(s.requestId));
+    if (eligible.length === 0) break;
+
+    let nearest = null;
+    let minDist = Infinity;
+    for (const stop of eligible) {
+      const dist = calculateHaversineDistanceKm(cur.lat, cur.lng, stop.lat, stop.lng);
+      if (dist < minDist) { minDist = dist; nearest = stop; }
+    }
+    if (!nearest) break;
+
+    const label = LABELS[result.length] || String(result.length + 1);
+    result.push({
+      type: nearest.type,
+      requestId: nearest.requestId,
+      label,
+      lat: nearest.lat,
+      lng: nearest.lng,
+      commuterName: nearest.ride.commuter?.fullName || 'Commuter',
+      status: nearest.ride.status,
+      pickupLocation: nearest.ride.pickupLocation,
+      dropoffLocation: nearest.ride.dropoffLocation,
+      fareAmount: nearest.ride.fareAmount,
+    });
+
+    remaining = remaining.filter(
+      (s) => !(s.type === nearest.type && s.requestId === nearest.requestId),
+    );
+    if (nearest.type === 'pickup') pickedUp.add(nearest.requestId);
+    cur = { lat: nearest.lat, lng: nearest.lng };
+  }
+
+  return result;
+}
+
+// GET /api/rides/driver-route — returns optimized stop order for the driver
+router.get('/driver-route', requireAuth, requireRole('driver'), async (req, res) => {
+  const driverLat = parseFloat(req.query.lat);
+  const driverLng = parseFloat(req.query.lng);
+
+  try {
+    const driverContext = await getDriverAccessContext(db, req.session.userId);
+    const accessMessage = getDriverAccessMessage(driverContext);
+    if (accessMessage) return res.status(403).json({ message: accessMessage });
+
+    const [rows] = await db.query(
+      `SELECT request_id FROM ride_requests
+       WHERE assigned_driver_id = ? AND status IN ('accepted', 'arrived', 'in_progress')
+       ORDER BY request_time ASC`,
+      [driverContext.driverId],
+    );
+
+    if (rows.length === 0) return res.json({ waypoints: [], currentTarget: null });
+
+    const rides = (await Promise.all(rows.map((r) => getRideDetails(db, r.request_id)))).filter(Boolean);
+    const startPos = isValidCoordinate(driverLat, driverLng) ? { lat: driverLat, lng: driverLng } : null;
+    const waypoints = buildOrderedWaypoints(rides, startPos);
+
+    return res.json({ waypoints, currentTarget: waypoints[0] || null });
+  } catch (error) {
+    console.error('Driver route error:', error);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 // POST /api/rides/:id/accept - approved driver accepts a ride
 router.post('/:id/accept', requireAuth, requireRole('driver'), async (req, res) => {
   const requestId = parsePositiveInt(req.params.id);
@@ -612,20 +705,19 @@ router.post('/:id/accept', requireAuth, requireRole('driver'), async (req, res) 
       });
     }
 
+    // Allow up to 6 concurrent active rides per driver (tricycle capacity)
     const [activeRows] = await conn.query(
       `
-        SELECT request_id
+        SELECT COUNT(*) AS cnt
         FROM ride_requests
         WHERE assigned_driver_id = ? AND status IN ('accepted', 'arrived', 'in_progress') AND request_id <> ?
-        LIMIT 1
-        FOR UPDATE
       `,
       [driverContext.driverId, requestId],
     );
 
-    if (activeRows.length > 0) {
+    if (activeRows[0].cnt >= 6) {
       await conn.rollback();
-      return res.status(409).json({ message: 'Complete your current accepted ride before accepting another booking.' });
+      return res.status(409).json({ message: 'Tricycle is at passenger capacity (6/6). Complete a ride first.' });
     }
 
     const [rows] = await conn.query(

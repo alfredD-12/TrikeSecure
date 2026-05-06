@@ -32,7 +32,18 @@ export function AppProvider({ children }) {
   const [liveLocation, setLiveLocation] = useState(null);  // { lat, lng, accuracy } from watchPosition
   const [isMapMoving, setIsMapMoving] = useState(false);
   const [pendingRides, setPendingRides] = useState([]);
-  const [activeDriverRide, setActiveDriverRide] = useState(null);
+  const [activeDriverRides, setActiveDriverRides] = useState([]);
+  // Backward-compat alias: first ride in array (used by single-ride map components)
+  const activeDriverRide = activeDriverRides[0] ?? null;
+  const setActiveDriverRide = useCallback((ride) => {
+    setActiveDriverRides((prev) => {
+      if (!ride) return [];
+      // Replace existing entry for this ride, or add it
+      const exists = prev.findIndex((r) => r.requestId === ride.requestId);
+      if (exists >= 0) return prev.map((r, i) => (i === exists ? ride : r));
+      return [...prev, ride];
+    });
+  }, []);
   const [activeCommuterRide, setActiveCommuterRide] = useState(null);
   const translationRequestsRef = useRef(new Set());
   const translationInFlightRef = useRef(new Set());
@@ -190,7 +201,7 @@ export function AppProvider({ children }) {
   }, [lang, dynamicDict]);
 
   return (
-    <AppContext.Provider value={{ lang, darkMode, setDarkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, resetThemeForLogout, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, dynamicDict, setDynamicDict, liveLocation, setLiveLocation, isMapMoving, setIsMapMoving, pendingRides, setPendingRides, activeDriverRide, setActiveDriverRide, activeCommuterRide, setActiveCommuterRide }}>
+    <AppContext.Provider value={{ lang, darkMode, setDarkMode, view, setView, currentUser, setCurrentUser, toggleDarkMode, resetThemeForLogout, toggleLanguage, t, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, dynamicDict, setDynamicDict, liveLocation, setLiveLocation, isMapMoving, setIsMapMoving, pendingRides, setPendingRides, activeDriverRide, setActiveDriverRide, activeDriverRides, setActiveDriverRides, activeCommuterRide, setActiveCommuterRide }}>
       {children}
     </AppContext.Provider>
   );

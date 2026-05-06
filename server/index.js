@@ -206,18 +206,31 @@ app.get('/api/geocode/search', async (req, res) => {
 });
 
 // OSRM route proxy — browser can't call OSRM directly (CORS); we proxy server-side
+// Supports two modes:
+//   Two-point:  ?startLng=X&startLat=Y&endLng=A&endLat=B
+//   Multi-stop: ?waypoints=lng1,lat1;lng2,lat2;lng3,lat3   (semicolon-separated)
 app.get('/api/route', async (req, res) => {
-  const { startLng, startLat, endLng, endLat } = req.query;
-  if (!startLng || !startLat || !endLng || !endLat) {
+  const { startLng, startLat, endLng, endLat, waypoints } = req.query;
+
+  let coordsStr;
+  if (waypoints) {
+    coordsStr = waypoints; // already "lng,lat;lng,lat;..."
+  } else if (startLng && startLat && endLng && endLat) {
+    coordsStr = `${startLng},${startLat};${endLng},${endLat}`;
+  } else {
     return res.status(400).json({ message: 'Missing coordinates.' });
   }
 
-  const straight = [[Number(startLat), Number(startLng)], [Number(endLat), Number(endLng)]];
+  // Straight-line fallback using first and last point
+  const parts = coordsStr.split(';');
+  const [fLng, fLat] = parts[0].split(',').map(Number);
+  const [lLng, lLat] = parts[parts.length - 1].split(',').map(Number);
+  const straight = [[fLat, fLng], [lLat, lLng]];
 
   try {
     const osrmUrl =
       `https://router.project-osrm.org/route/v1/driving/` +
-      `${startLng},${startLat};${endLng},${endLat}` +
+      `${coordsStr}` +
       `?overview=full&geometries=geojson`;
 
     const controller = new AbortController();
@@ -242,6 +255,7 @@ app.get('/api/route', async (req, res) => {
     return res.json({ coords: straight }); // graceful fallback
   }
 });
+
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -272,7 +272,7 @@ function MetricBox({ label, value, darkMode }) {
   );
 }
 
-function DriverActiveRideCard({ ride, updating, onAdvance, onFocusTarget, liveLocation }) {
+function DriverActiveRideCard({ ride, label, updating, onAdvance, onFocusTarget, liveLocation }) {
   const { darkMode } = useApp();
   const meta = DRIVER_RIDE_STATUS_META[ride?.status] || DRIVER_RIDE_STATUS_META.accepted;
   const focusTarget = ride?.status === 'in_progress' ? 'dropoff' : 'pickup';
@@ -287,29 +287,36 @@ function DriverActiveRideCard({ ride, updating, onAdvance, onFocusTarget, liveLo
   const canShowMapTarget = hasCoords(targetPoint);
 
   return (
-    <div className={`v-anim v-anim--3 mb-5 rounded-[26px] border p-4 shadow-[0_16px_45px_rgba(15,23,42,0.08)] ${
+    <div className={`rounded-[22px] border p-4 shadow-[0_8px_30px_rgba(15,23,42,0.07)] ${
       darkMode
         ? 'border-green-900 bg-slate-900/95'
         : 'border-green-100 bg-white/95'
     }`}>
       <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <p className={`text-[10px] font-black uppercase tracking-[0.22em] ${
-            darkMode ? 'text-green-400' : 'text-green-600'
-          }`}>Current Ride</p>
-          <h3 className={`mt-1 text-lg font-black ${
-            darkMode ? 'text-gray-100' : 'text-gray-900'
-          }`}>{meta.title}</h3>
-          <p className={`mt-0.5 text-xs font-bold ${
-            darkMode ? 'text-gray-400' : 'text-gray-500'
-          }`}>{ride?.commuter?.fullName || 'Commuter'}</p>
+        <div className="flex items-center gap-2">
+          {label && (
+            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${
+              darkMode ? 'bg-green-800 text-green-200' : 'bg-green-100 text-green-700'
+            }`}>{label}</span>
+          )}
+          <div>
+            <p className={`text-[10px] font-black uppercase tracking-[0.22em] ${
+              darkMode ? 'text-green-400' : 'text-green-600'
+            }`}>Active Ride</p>
+            <h3 className={`text-base font-black ${
+              darkMode ? 'text-gray-100' : 'text-gray-900'
+            }`}>{meta.title}</h3>
+            <p className={`text-xs font-bold ${
+              darkMode ? 'text-gray-400' : 'text-gray-500'
+            }`}>{ride?.commuter?.fullName || 'Commuter'}</p>
+          </div>
         </div>
         <div className="flex flex-col items-end gap-1">
           <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${meta.tone}`}>
             {meta.label}
           </span>
           {ride?.fareAmount != null && (
-            <span className="text-lg font-black text-emerald-600">₱{Number(ride.fareAmount).toFixed(2)}</span>
+            <span className="text-base font-black text-emerald-600">₱{Number(ride.fareAmount).toFixed(2)}</span>
           )}
         </div>
       </div>
@@ -627,7 +634,7 @@ function DriverQrTab({ profile, darkMode }) {
 }
 
 export default function DriverView({ mapRef }) {
-  const { t, setView, setCurrentUser, currentUser, pendingRides, setPendingRides, activeDriverRide, setActiveDriverRide, liveLocation, resetThemeForLogout, darkMode } = useApp();
+  const { t, setView, setCurrentUser, currentUser, pendingRides, setPendingRides, activeDriverRides, setActiveDriverRides, liveLocation, resetThemeForLogout, darkMode } = useApp();
   const [activeTab, setActiveTab] = useState('home');
   const [dutyOn, setDutyOn] = useState(true);
   const [ridesLoading, setRidesLoading] = useState(true);
@@ -644,7 +651,7 @@ export default function DriverView({ mapRef }) {
   const [fuelSnapshot, setFuelSnapshot] = useState(null);
   const [fuelLoading, setFuelLoading] = useState(false);
   const [fuelError, setFuelError] = useState('');
-  const [updatingRideStatus, setUpdatingRideStatus] = useState(false);
+  const [updatingRideId, setUpdatingRideId] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(null);
   const [isCompletionClosing, setIsCompletionClosing] = useState(false);
@@ -761,7 +768,7 @@ export default function DriverView({ mapRef }) {
   async function doLogout() {
     await logout();
     resetThemeForLogout();
-    setActiveDriverRide(null);
+    setActiveDriverRides([]);
     setCurrentUser(null);
     setView('login');
     const sheet = document.getElementById('driver-sheet');
@@ -865,8 +872,15 @@ export default function DriverView({ mapRef }) {
 
   const loadActiveDriverRide = useCallback(async () => {
     const result = await getActiveRide();
-    setActiveDriverRide(result?.ride || null);
-  }, [setActiveDriverRide]);
+    // Backend now returns { rides: [...] } for driver, handle both formats
+    if (Array.isArray(result?.rides)) {
+      setActiveDriverRides(result.rides);
+    } else if (result?.ride) {
+      setActiveDriverRides([result.ride]);
+    } else {
+      setActiveDriverRides([]);
+    }
+  }, [setActiveDriverRides]);
 
   useEffect(() => {
     setRidesLoading(true);
@@ -924,35 +938,35 @@ export default function DriverView({ mapRef }) {
 
   useEffect(() => {
     if (!driverProfile?.canOperate) {
-      setActiveDriverRide(null);
+      setActiveDriverRides([]);
       return;
     }
 
-    loadActiveDriverRide().catch(() => setActiveDriverRide(null));
-  }, [driverProfile?.canOperate, loadActiveDriverRide, setActiveDriverRide]);
+    loadActiveDriverRide().catch(() => setActiveDriverRides([]));
+  }, [driverProfile?.canOperate, loadActiveDriverRide, setActiveDriverRides]);
 
   useEffect(() => {
-    const canShareLocation = activeDriverRide?.requestId
-      && ['accepted', 'arrived', 'in_progress'].includes(activeDriverRide.status)
+    // Share location with the first active ride (location stored per driver, not per ride)
+    const primaryRide = activeDriverRides.find((r) =>
+      ['accepted', 'arrived', 'in_progress'].includes(r.status),
+    );
+
+    const canShareLocation = primaryRide?.requestId
       && liveLocation?.lat != null
       && liveLocation?.lng != null;
 
-    if (!canShareLocation) {
-      return;
-    }
+    if (!canShareLocation) return;
 
     const now = Date.now();
-    if (now - lastLocationUpdateRef.current < 5000) {
-      return;
-    }
+    if (now - lastLocationUpdateRef.current < 5000) return;
 
     lastLocationUpdateRef.current = now;
-    updateDriverRideLocation(activeDriverRide.requestId, {
+    updateDriverRideLocation(primaryRide.requestId, {
       lat: liveLocation.lat,
       lng: liveLocation.lng,
       accuracy: liveLocation.accuracy ?? null,
     }).catch(() => {});
-  }, [activeDriverRide?.requestId, activeDriverRide?.status, liveLocation]);
+  }, [activeDriverRides, liveLocation]);
 
   const acceptRide = async (rideId) => {
     setAcceptingId(rideId);
@@ -963,9 +977,12 @@ export default function DriverView({ mapRef }) {
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
-        setPendingRides(prev => prev.filter(r => r.request_id !== rideId));
-        setActiveDriverRide(data?.ride || null);
-        showToast('Ride accepted. Exact pickup is now visible on your map.', 'success');
+        setPendingRides((prev) => prev.filter((r) => r.request_id !== rideId));
+        if (data?.ride) {
+          // Append new ride to the array
+          setActiveDriverRides((prev) => [...prev.filter((r) => r.requestId !== data.ride.requestId), data.ride]);
+        }
+        showToast('Ride accepted! Navigate to pickup.', 'success');
         await loadDriverData(false);
       } else {
         const data = await res.json();
@@ -980,38 +997,38 @@ export default function DriverView({ mapRef }) {
     }
   };
 
-  async function advanceActiveRide() {
-    if (!activeDriverRide?.requestId) {
-      return;
-    }
+  async function advanceActiveRide(rideId) {
+    const ride = activeDriverRides.find((r) => r.requestId === rideId);
+    if (!ride) return;
 
     const actionByStatus = {
       accepted: markRideArrived,
       arrived: startRide,
       in_progress: completeRide,
     };
-    const nextAction = actionByStatus[activeDriverRide.status];
+    const nextAction = actionByStatus[ride.status];
 
     if (!nextAction) {
       showToast('This ride has no next action yet.', 'error');
       return;
     }
 
-    setUpdatingRideStatus(true);
+    setUpdatingRideId(rideId);
     try {
-      const result = await nextAction(activeDriverRide.requestId);
-      
-      // Check if ride is completed (handle both response formats)
+      const result = await nextAction(rideId);
+
       const isCompleted = result?.status === 'completed' || result?.ride?.status === 'completed';
-      
+
       if (isCompleted) {
-        const completedFare = result?.ride?.fareAmount || result?.fareAmount || activeDriverRide?.fareAmount || 0;
-        setActiveDriverRide(null);
+        const completedFare = result?.ride?.fareAmount || result?.fareAmount || ride?.fareAmount || 0;
+        setActiveDriverRides((prev) => prev.filter((r) => r.requestId !== rideId));
         setShowCompletionModal({ fareAmount: completedFare });
         await loadDriverData(false);
         fetchPendingRides();
       } else if (result?.ride) {
-        setActiveDriverRide(result.ride);
+        setActiveDriverRides((prev) =>
+          prev.map((r) => (r.requestId === rideId ? result.ride : r)),
+        );
         showToast(result.message || 'Ride status updated.', 'success');
       } else {
         showToast(result?.message || 'Could not update ride status.', 'error');
@@ -1019,19 +1036,16 @@ export default function DriverView({ mapRef }) {
     } catch {
       showToast('Network error - please try again.', 'error');
     } finally {
-      setUpdatingRideStatus(false);
+      setUpdatingRideId(null);
     }
   }
 
-  function focusActiveRideTarget() {
-    const target = activeDriverRide?.status === 'in_progress'
-      ? { lat: activeDriverRide.dropoffLat, lng: activeDriverRide.dropoffLng }
-      : { lat: activeDriverRide?.pickupLat, lng: activeDriverRide?.pickupLng };
-
-    if (!mapRef?.current || target.lat == null || target.lng == null) {
-      return;
-    }
-
+  function focusRide(ride) {
+    if (!ride || !mapRef?.current) return;
+    const target = ride.status === 'in_progress'
+      ? { lat: ride.dropoffLat, lng: ride.dropoffLng }
+      : { lat: ride.pickupLat, lng: ride.pickupLng };
+    if (target.lat == null || target.lng == null) return;
     mapRef.current.flyTo([target.lat, target.lng], 17, { duration: 1.0 });
   }
 
@@ -1269,7 +1283,7 @@ export default function DriverView({ mapRef }) {
             <div className="v-ride-toast__actions">
               <button
                 className="v-ride-toast__btn-accept"
-                disabled={Boolean(activeDriverRide)}
+                disabled={activeDriverRides.length >= 6}
                 onClick={() => { acceptRide(newRideToast.request_id); setNewRideToast(null); }}
               >
                 ✓ Accept
@@ -1388,14 +1402,44 @@ export default function DriverView({ mapRef }) {
             </div>
           </div>
 
-          {activeDriverRide && (
-            <DriverActiveRideCard
-              ride={activeDriverRide}
-              updating={updatingRideStatus}
-              onAdvance={advanceActiveRide}
-              onFocusTarget={focusActiveRideTarget}
-              liveLocation={liveLocation}
-            />
+          {activeDriverRides.length > 0 && (
+            <div className="mb-5 space-y-3">
+              {/* Multi-ride header */}
+              <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 ${
+                darkMode ? 'bg-green-900/20 border border-green-800/40' : 'bg-green-50 border border-green-100'
+              }`}>
+                <div className={`flex h-8 w-8 items-center justify-center rounded-xl ${
+                  darkMode ? 'bg-green-800/50' : 'bg-green-100'
+                }`}>
+                  <Users size={15} className={darkMode ? 'text-green-300' : 'text-green-600'} />
+                </div>
+                <div className="flex-1">
+                  <p className={`text-[10px] font-black uppercase tracking-widest ${
+                    darkMode ? 'text-green-400' : 'text-green-600'
+                  }`}>Active Rides</p>
+                  <p className={`text-xs font-bold ${
+                    darkMode ? 'text-gray-300' : 'text-gray-700'
+                  }`}>
+                    {activeDriverRides.length} passenger{activeDriverRides.length !== 1 ? 's' : ''} on board
+                  </p>
+                </div>
+                <span className="rounded-full bg-green-500 px-2.5 py-1 text-[10px] font-black text-white">
+                  {activeDriverRides.length}/6
+                </span>
+              </div>
+              {/* One card per ride */}
+              {activeDriverRides.map((ride, idx) => (
+                <DriverActiveRideCard
+                  key={ride.requestId}
+                  ride={ride}
+                  label={String.fromCharCode(65 + idx)}
+                  updating={updatingRideId === ride.requestId}
+                  onAdvance={() => advanceActiveRide(ride.requestId)}
+                  onFocusTarget={() => focusRide(ride)}
+                  liveLocation={liveLocation}
+                />
+              ))}
+            </div>
           )}
 
           <div data-tour="driver-fuel-card">
@@ -1545,12 +1589,12 @@ export default function DriverView({ mapRef }) {
                     <div className="flex gap-2">
                       <button
                         onClick={() => acceptRide(req.request_id)}
-                        disabled={isAccepting || Boolean(activeDriverRide)}
+                        disabled={isAccepting || activeDriverRides.length >= 6}
                         className="v-btn-accept flex items-center justify-center gap-2"
-                        style={{ opacity: isAccepting || activeDriverRide ? 0.75 : 1 }}
+                        style={{ opacity: isAccepting || activeDriverRides.length >= 6 ? 0.75 : 1 }}
                       >
-                        {activeDriverRide
-                          ? 'Finish current'
+                        {activeDriverRides.length >= 6
+                          ? 'At capacity (6/6)'
                           : isAccepting
                           ? <><Loader2 size={14} className="animate-spin" /> {t('driver-accepting')}</>
                           : <>{t('driver-accept')}</>
