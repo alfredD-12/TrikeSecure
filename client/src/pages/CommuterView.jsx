@@ -3,7 +3,7 @@ import {
   CarFront, ScanLine, ClipboardList, User,
   AlertCircle, ChevronDown, Hash, ShieldCheck, LogOut, ChevronRight, QrCode,
   LocateFixed, MapPin, X, Camera, CheckCircle2, Phone, Clock, Navigation, Route, Truck, Loader2,
-  History, FileText, Siren, HeadphonesIcon, Mail, ChevronLeft, Eye, EyeOff, Lock, Save, Pencil, Weight, Users2
+  History, FileText, Siren, HeadphonesIcon, Mail, ChevronLeft, Eye, EyeOff, Lock, Save, Pencil, Weight, Users2, HelpCircle
 } from 'lucide-react';
 import { animate, stagger, createTimeline } from 'animejs';
 import { useApp } from '../contexts/AppContext';
@@ -11,6 +11,7 @@ import Header from '../components/Header';
 import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
 import LocationSearchModal from '../components/commuter/LocationSearchModal';
+import CommuterOnboardingTour from '../components/commuter/CommuterOnboardingTour';
 import SOSButton from '../components/SOSButton';
 import { getDriverByQr, logout, bookRide, cancelRide, getActiveRide, getRideStatus, getProfile, updateProfile, updatePassword, searchDriversByBodyNumber, submitComplaint, getRideHistory, getComplaintHistory, getSOSHistory, submitRating, getFareSettings } from '../services/api';
 import {
@@ -605,6 +606,13 @@ export default function CommuterView({ mapRef }) {
   const [reportDescription, setReportDescription] = useState('');
   const [toast, setToast] = useState(null);
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [showCommuterTour, setShowCommuterTour] = useState(() => {
+    try {
+      return localStorage.getItem('ts_commuter_tour_done') !== '1';
+    } catch {
+      return true;
+    }
+  });
 
   useEffect(() => {
     if (toast) {
@@ -1070,6 +1078,20 @@ export default function CommuterView({ mapRef }) {
     }
   }
 
+  const handleTourStepChange = useCallback((step) => {
+    if (step?.tab) {
+      setActiveTab(step.tab);
+    }
+    if (step?.accountView) {
+      setAccountView(step.accountView);
+    }
+    const sheet = document.getElementById('commuter-sheet');
+    if (sheet) {
+      sheet.style.transition = 'transform 0.3s cubic-bezier(0.16,1,0.3,1)';
+      sheet.style.transform = 'translateY(0px)';
+    }
+  }, []);
+
   async function stopScanner() {
     if (!scannerRef.current) return;
     const scanner = scannerRef.current;
@@ -1322,6 +1344,11 @@ export default function CommuterView({ mapRef }) {
           }} 
         />
       )}
+      <CommuterOnboardingTour
+        open={showCommuterTour}
+        onClose={() => setShowCommuterTour(false)}
+        onStepChange={handleTourStepChange}
+      />
       {/* Modal at root level - over everything */}
       {(showPlateModal || isModalClosing) && selectedTricycle && (
         <div className="fixed inset-0 z-[999999]">
@@ -1435,6 +1462,22 @@ export default function CommuterView({ mapRef }) {
 
       <MapControls mapRef={mapRef} />
 
+      <button
+        type="button"
+        onClick={() => setShowCommuterTour(true)}
+        data-tour="tutorial-shortcut"
+        className={`absolute right-4 top-20 z-[55] flex h-11 items-center gap-2 rounded-full border px-3 text-xs font-black shadow-lg backdrop-blur-xl transition active:scale-95 ${
+          darkMode
+            ? 'border-white/10 bg-slate-900/82 text-slate-100'
+            : 'border-white/70 bg-white/88 text-slate-800'
+        }`}
+        title="Open tutorial"
+        aria-label="Open commuter tutorial"
+      >
+        <HelpCircle size={18} className={darkMode ? 'text-blue-300' : 'text-blue-600'} />
+        <span>Tutorial</span>
+      </button>
+
       {/* Searching for driver overlay */}
       {bookingStatus === 'searching' && (
         <SearchingOverlay onCancel={cancelBooking} error={bookingError} />
@@ -1524,7 +1567,7 @@ export default function CommuterView({ mapRef }) {
           {/* Hide the entire booking form when there is an active ride */}
           {!activeRide && (
             <>
-          <div className="v-anim v-anim--2 v-route-panel mb-4 overflow-hidden">
+          <div className="v-anim v-anim--2 v-route-panel mb-4 overflow-hidden" data-tour="ride-route">
             <div className="v-route-line" />
 
             {/* FROM row */}
@@ -1538,6 +1581,7 @@ export default function CommuterView({ mapRef }) {
                   <button
                     onClick={() => setSearchModal('from')}
                     disabled={bookingStatus === 'searching'}
+                    data-tour="pickup-field"
                     className={`flex-1 text-left font-bold text-sm truncate min-w-0 v-location-text ${userPickup ? 'has-value' : 'placeholder'} ${bookingStatus === 'searching' ? `opacity-40 cursor-not-allowed ${darkMode ? 'text-gray-400' : 'text-gray-600'}` : ''}`}
                   >
                     {userPickup ? userPickup.label : t('commuter-set-pickup')}
@@ -1578,6 +1622,7 @@ export default function CommuterView({ mapRef }) {
                   <button
                     onClick={() => setSearchModal('to')}
                     disabled={bookingStatus === 'searching'}
+                    data-tour="destination-field"
                     className={`flex-1 text-left font-bold text-sm px-3 py-2 transition-all focus:outline-none truncate min-w-0 v-location-text ${destination ? 'has-value' : 'placeholder'} ${bookingStatus === 'searching' ? `opacity-40 cursor-not-allowed ${darkMode ? 'text-gray-400' : 'text-gray-600'}` : ''}`}
                   >
                     {destination || t('commuter-destination-placeholder')}
@@ -1595,6 +1640,7 @@ export default function CommuterView({ mapRef }) {
                     onClick={activatePinOnMap}
                     disabled={!!pinTarget || bookingStatus === 'searching'}
                     title="Pin destination on map"
+                    data-tour="destination-pin"
                     className="shrink-0 w-11 h-11 flex items-center justify-center bg-red-50 border border-red-100 text-red-600 rounded-xl btn-press disabled:opacity-40"
                   >
                     <MapPin size={17} />
@@ -1639,7 +1685,7 @@ export default function CommuterView({ mapRef }) {
             ))}
           </div>
 
-          <button disabled={!canBook} onClick={handleBookRide} className="v-anim v-anim--5 v-btn-primary">
+          <button disabled={!canBook} onClick={handleBookRide} data-tour="book-button" className="v-anim v-anim--5 v-btn-primary">
             {t('commuter-book-btn')}
           </button>
             </>
@@ -1655,7 +1701,7 @@ export default function CommuterView({ mapRef }) {
 
           {/* Scanner box */}
           <div className="v-anim v-anim--2 mb-4">
-            <div className="v-scanner-box mb-3 relative overflow-hidden">
+            <div className="v-scanner-box mb-3 relative overflow-hidden" data-tour="scan-camera">
               <div id="commuter-qr-reader" className="absolute inset-0 z-0" />
               {/* Centered square scan area with corner brackets inside */}
               <div
@@ -1718,7 +1764,7 @@ export default function CommuterView({ mapRef }) {
           </div>
 
           {/* Manual input */}
-          <div className="v-anim v-anim--3 v-input-wrap shadow-sm mb-5">
+          <div className="v-anim v-anim--3 v-input-wrap shadow-sm mb-5" data-tour="manual-search">
             <Hash className="v-input-icon w-5 h-5" />
             <input
               type="text"
@@ -1870,7 +1916,7 @@ export default function CommuterView({ mapRef }) {
         </div>
 
         {/* ── Report Tab ───────────────────────────────────── */}
-        <div className={`tab-content pb-4${activeTab === 'report' ? ' active' : ''}`}>
+        <div className={`tab-content pb-4${activeTab === 'report' ? ' active' : ''}`} data-tour="report-form">
           <h2 className="v-anim v-anim--1 text-3xl font-black text-gray-900 mb-6 tracking-tight">{t('commuter-report-title')}</h2>
 
           <form className="space-y-4">
@@ -2121,7 +2167,7 @@ export default function CommuterView({ mapRef }) {
         </div>
 
         {/* ── Account Tab ──────────────────────────────────── */}
-        <div className={`tab-content pb-4${activeTab === 'account' ? ' active' : ''}`}>
+        <div className={`tab-content pb-4${activeTab === 'account' ? ' active' : ''}`} data-tour="account-tools">
 
           {/* ── Account Main ── */}
           {accountView === 'main' && (
@@ -2140,12 +2186,13 @@ export default function CommuterView({ mapRef }) {
 
               <div className="v-anim v-anim--3 space-y-3 mb-8">
                 {[
+                  { icon: <HelpCircle size={20} className={darkMode ? 'text-gray-300' : 'text-gray-600'} />, label: 'Step-by-step Tutorial', action: () => setShowCommuterTour(true) },
                   { icon: <User size={20} className={darkMode ? 'text-gray-300' : 'text-gray-600'} />, label: t('commuter-profile'), view: 'editProfile' },
                   { icon: <History size={20} className={darkMode ? 'text-gray-300' : 'text-gray-600'} />, label: t('commuter-history'), view: 'history' },
                   { icon: <HeadphonesIcon size={20} className={darkMode ? 'text-gray-300' : 'text-gray-600'} />, label: t('commuter-support'), view: 'support' },
                   { icon: <ShieldCheck size={20} className={darkMode ? 'text-gray-300' : 'text-gray-600'} />, label: t('commuter-privacy-security'), view: 'privacy' },
                 ].map((item, i) => (
-                  <button key={i} className="v-menu-row" onClick={() => openAccountView(item.view)}>
+                  <button key={i} className="v-menu-row" onClick={() => item.action ? item.action() : openAccountView(item.view)}>
                     <div className="flex items-center gap-4">
                       <div className={`p-2.5 rounded-xl ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>{item.icon}</div>
                       <span className={`font-bold text-sm ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.label}</span>
@@ -2693,6 +2740,7 @@ export default function CommuterView({ mapRef }) {
           <button
             key={item.id}
             onClick={() => switchTab(item.id)}
+            data-tour={`nav-${item.id}`}
             className={`v-nav-item ${activeTab === item.id ? 'active' : ''}`}
           >
             <item.Icon size={24} />

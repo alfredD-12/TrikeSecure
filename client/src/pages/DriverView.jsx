@@ -5,7 +5,7 @@ import {
   Clock, AlertCircle, Phone, Users, BadgeCheck, Shield, ChevronRight,
   Fuel, ExternalLink, RefreshCw, Navigation, X, ChevronLeft,
   Star, HeadphonesIcon, Mail, Siren, ShieldCheck, Pencil,
-  QrCode, Download
+  QrCode, Download, HelpCircle
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import Header from '../components/Header';
@@ -13,6 +13,7 @@ import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
 import SOSButton from '../components/SOSButton';
 import DriverOnboardingPanel from '../components/driver/DriverOnboardingPanel';
+import DriverOnboardingTour from '../components/driver/DriverOnboardingTour';
 import PresidentMembershipTab from '../components/driver/PresidentMembershipTab';
 import {
   logout,
@@ -641,6 +642,13 @@ export default function DriverView({ mapRef }) {
   const [submitting, setSubmitting] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(null);
   const [isCompletionClosing, setIsCompletionClosing] = useState(false);
+  const [showDriverTour, setShowDriverTour] = useState(() => {
+    try {
+      return localStorage.getItem('ts_driver_tour_done') !== '1';
+    } catch {
+      return true;
+    }
+  });
   const lastLocationUpdateRef = useRef(0);
   const knownRidesRef = useRef(new Set());
   // Account sub-view state
@@ -713,6 +721,25 @@ export default function DriverView({ mapRef }) {
       sheet.style.transform = 'translateY(0px)';
     }
   }
+
+  const handleDriverTourStepChange = useCallback((step) => {
+    if (step?.tab === 'president' && !showPresidentTab) {
+      setActiveTab('account');
+      setDriverAccountView('main');
+    } else if (step?.tab) {
+      setActiveTab(step.tab);
+    }
+    if (step?.accountView) {
+      setDriverAccountView(step.accountView);
+    } else if (step?.tab !== 'account') {
+      setDriverAccountView('main');
+    }
+    const sheet = document.getElementById('driver-sheet');
+    if (sheet) {
+      sheet.style.transition = 'transform 0.3s cubic-bezier(0.16,1,0.3,1)';
+      sheet.style.transform = 'translateY(0px)';
+    }
+  }, [showPresidentTab]);
 
   async function doLogout() {
     await logout();
@@ -1105,6 +1132,30 @@ export default function DriverView({ mapRef }) {
       {!isOnboardingLocked && <Header badge={driverProfile?.bodyNumber ?? undefined} />}
       {!isOnboardingLocked && <MapControls mapRef={mapRef} />}
 
+      <DriverOnboardingTour
+        open={showDriverTour && !profileLoading}
+        onClose={() => setShowDriverTour(false)}
+        onStepChange={handleDriverTourStepChange}
+        isOnboardingLocked={isOnboardingLocked}
+        showPresidentTab={showPresidentTab}
+      />
+
+      <button
+        type="button"
+        onClick={() => setShowDriverTour(true)}
+        data-tour="driver-tutorial-shortcut"
+        className={`absolute right-4 ${isOnboardingLocked ? 'top-4' : 'top-20'} z-[55] flex h-11 items-center gap-2 rounded-full border px-3 text-xs font-black shadow-lg backdrop-blur-xl transition active:scale-95 ${
+          darkMode
+            ? 'border-white/10 bg-slate-900/82 text-slate-100'
+            : 'border-white/70 bg-white/88 text-slate-800'
+        }`}
+        title="Open driver tutorial"
+        aria-label="Open driver tutorial"
+      >
+        <HelpCircle size={18} className={darkMode ? 'text-emerald-300' : 'text-emerald-600'} />
+        <span>Tutorial</span>
+      </button>
+
       {/* Toast notification */}
       {toast && (
         <div
@@ -1219,6 +1270,7 @@ export default function DriverView({ mapRef }) {
                   <button
                     type="button"
                     onClick={() => switchTab('account')}
+                    data-tour="driver-open-setup"
                     className="rounded-2xl bg-red-600 px-4 py-3 text-sm font-black text-white shadow-lg shadow-red-200 transition hover:bg-red-500"
                   >
                     Open Account Setup
@@ -1246,7 +1298,7 @@ export default function DriverView({ mapRef }) {
             <>
 
           {/* Header row with duty toggle */}
-          <div className="v-anim v-anim--1 flex justify-between items-center mb-5">
+          <div className="v-anim v-anim--1 flex justify-between items-center mb-5" data-tour="driver-duty-toggle">
             <div>
               <h2 className={`text-3xl font-black tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{t('driver-duty-status')}</h2>
               <p className={`text-sm font-semibold mt-0.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t('driver-accept-passengers')}</p>
@@ -1263,7 +1315,7 @@ export default function DriverView({ mapRef }) {
           </div>
 
           {/* Online / Offline status card */}
-          <div className={`v-anim v-anim--2 mb-5 ${dutyOn ? 'v-online-card' : 'v-offline-card'}`}>
+          <div className={`v-anim v-anim--2 mb-5 ${dutyOn ? 'v-online-card' : 'v-offline-card'}`} data-tour="driver-online-card">
             <div className="flex items-center gap-4">
               <div className="relative w-12 h-12 flex items-center justify-center shrink-0">
                 {dutyOn && <div className="absolute inset-0 bg-green-400 rounded-full opacity-40 radar-ping" />}
@@ -1295,12 +1347,14 @@ export default function DriverView({ mapRef }) {
             />
           )}
 
-          <FuelPriceCard
-            snapshot={fuelSnapshot}
-            loading={fuelLoading}
-            error={fuelError}
-            onRefresh={loadFuelPrices}
-          />
+          <div data-tour="driver-fuel-card">
+            <FuelPriceCard
+              snapshot={fuelSnapshot}
+              loading={fuelLoading}
+              error={fuelError}
+              onRefresh={loadFuelPrices}
+            />
+          </div>
 
           {/* Stats */}
           <div className="v-anim v-anim--3 grid grid-cols-3 gap-3 mb-6 transition-opacity duration-300" style={{ opacity: dutyOn ? 1 : 0.45 }}>
@@ -1318,7 +1372,7 @@ export default function DriverView({ mapRef }) {
           </div>
 
           {/* Section header */}
-          <div className="v-anim v-anim--4">
+          <div className="v-anim v-anim--4" data-tour="driver-requests-section">
             <div className="flex justify-between items-center mb-1 px-1">
               <h3 className="font-black text-gray-800 text-lg tracking-tight">{t('driver-requests-title')}</h3>
             </div>
@@ -1562,7 +1616,12 @@ export default function DriverView({ mapRef }) {
                   { icon: <History size={18} />, label: t('driver-trip-history') || 'Trip History', view: 'history' },
                   { icon: <HeadphonesIcon size={18} />, label: t('driver-contact-support') || 'Contact Support', view: 'support' },
                 ].map((item) => (
-                  <button key={item.view} className="v-menu-row" onClick={() => openDriverAccountView(item.view)}>
+                  <button
+                    key={item.view}
+                    className="v-menu-row"
+                    onClick={() => openDriverAccountView(item.view)}
+                    data-tour={item.view === 'franchise' ? 'driver-franchise-menu' : undefined}
+                  >
                     <div className="flex items-center gap-3">
                       <div className={`p-2.5 rounded-xl ${darkMode ? 'bg-slate-700 text-gray-300' : 'bg-gray-50 text-gray-600'}`}>
                         {item.icon}
@@ -1771,7 +1830,7 @@ export default function DriverView({ mapRef }) {
         )}
 
         {/* ── QR / ID Card Tab ──────────────────────────── */}
-        <div className={`tab-content pb-4${activeTab === 'qr' ? ' active' : ''}`}>
+        <div className={`tab-content pb-4${activeTab === 'qr' ? ' active' : ''}`} data-tour="driver-qr-card">
           {driverProfile && <DriverQrTab profile={driverProfile} darkMode={darkMode} />}
         </div>
       </BottomSheet>
@@ -1782,6 +1841,7 @@ export default function DriverView({ mapRef }) {
       <nav className="v-nav">
         <button
           onClick={() => switchTab('home')}
+          data-tour="driver-nav-home"
           className={`v-nav-item ${activeTab === 'home' ? 'active-green' : ''}`}
         >
           <div className="relative">
@@ -1796,6 +1856,7 @@ export default function DriverView({ mapRef }) {
         </button>
         <button
           onClick={() => switchTab('qr')}
+          data-tour="driver-nav-qr"
           className={`v-nav-item ${activeTab === 'qr' ? 'active-green' : ''}`}
         >
           <QrCode size={24} />
@@ -1803,6 +1864,7 @@ export default function DriverView({ mapRef }) {
         </button>
         <button
           onClick={() => { switchTab('account'); setDriverAccountView('main'); }}
+          data-tour="driver-nav-account"
           className={`v-nav-item ${activeTab === 'account' ? 'active-green' : ''}`}
         >
           <User size={24} />
@@ -1811,6 +1873,7 @@ export default function DriverView({ mapRef }) {
         {showPresidentTab && (
           <button
             onClick={() => switchTab('president')}
+            data-tour="driver-nav-president"
             className={`v-nav-item ${activeTab === 'president' ? 'active-green' : ''}`}
           >
             <Users size={24} />
