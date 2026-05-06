@@ -2,9 +2,9 @@ import { useEffect, useState, useMemo } from 'react';
 import {
   Building2, Users, Car, CheckCircle2, Loader2, Mail, Phone,
   ExternalLink, Eye, ChevronDown, Search, X, ChevronLeft, ChevronRight,
-  FileText, Hash, Shield, UserCheck
+  FileText, Hash, Shield, UserCheck, ThumbsUp, ThumbsDown, PauseCircle
 } from 'lucide-react';
-import { getAdminDrivers, getAdminTodas, reviewAdminToda } from '../../services/api';
+import { getAdminDrivers, getAdminTodas, reviewAdminToda, reviewAdminDriver } from '../../services/api';
 
 const PAGE_SIZE = 10;
 
@@ -80,8 +80,14 @@ function Metric({ dm, label, value, icon: Icon, color }) {
   );
 }
 
+const inCls = (dm) =>
+  `w-full rounded-xl border px-3 py-2.5 text-sm font-semibold outline-none transition resize-none ${
+    dm ? 'border-white/10 bg-white/5 text-white placeholder:text-gray-500' : 'border-gray-200 bg-white text-gray-900'
+  }`;
+
 /* ── Collapsible Driver Row with CSS-grid expand animation ── */
-function DriverRow({ driver, dm, open, onToggle }) {
+function DriverRow({ driver, dm, open, onToggle, onReview, isBusy, remarks, onRemarksChange }) {
+  const isPending = driver.membershipStatus === 'pending';
   const pills = (
     <div className="flex items-center flex-wrap gap-3">
       <StatusPill label="Membership" value={driver.membershipStatus} dm={dm} />
@@ -160,6 +166,46 @@ function DriverRow({ driver, dm, open, onToggle }) {
                 </div>
               </div>
             </div>
+
+            {/* Review panel — only for pending drivers */}
+            {isPending && (
+              <div className={`mt-4 rounded-xl p-4 ${dm ? 'bg-slate-900/40' : 'bg-gray-50'}`}>
+                <p className={`mb-3 text-[10px] font-black uppercase tracking-widest ${dm ? 'text-gray-500' : 'text-gray-400'}`}>Membership Decision</p>
+                <label className="block mb-3">
+                  <span className={`mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${dm ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <FileText size={11} /> Remarks (optional)
+                  </span>
+                  <textarea rows="2" value={remarks} onChange={e => onRemarksChange(e.target.value)}
+                    disabled={isBusy} placeholder="Approval notes or rejection reason…"
+                    className={inCls(dm)} />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={isBusy} onClick={() => onReview('approved')}
+                    className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-black text-white hover:bg-emerald-500 disabled:opacity-70">
+                    {isBusy ? <Loader2 size={13} className="animate-spin" /> : <ThumbsUp size={13} />}
+                    {isBusy ? 'Processing…' : 'Approve'}
+                  </button>
+                  <button type="button" disabled={isBusy} onClick={() => onReview('rejected')}
+                    className={`flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-black disabled:opacity-70 ${dm ? 'bg-red-500/10 text-red-300 hover:bg-red-500/20 border border-red-500/20' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}>
+                    {isBusy ? <Loader2 size={13} className="animate-spin" /> : <ThumbsDown size={13} />}
+                    {isBusy ? 'Processing…' : 'Reject'}
+                  </button>
+                  <button type="button" disabled={isBusy} onClick={() => onReview('suspended')}
+                    className={`flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-black disabled:opacity-70 ${dm ? 'bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/20' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}>
+                    {isBusy ? <Loader2 size={13} className="animate-spin" /> : <PauseCircle size={13} />}
+                    {isBusy ? 'Processing…' : 'Suspend'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Remarks display for already-reviewed drivers */}
+            {!isPending && driver.membershipRemarks && (
+              <div className={`mt-4 rounded-xl p-3 ${dm ? 'bg-slate-900/40' : 'bg-gray-50'}`}>
+                <p className={`mb-1 text-[9px] font-black uppercase tracking-widest ${dm ? 'text-gray-500' : 'text-gray-400'}`}>Review Remarks</p>
+                <p className={`text-xs font-semibold ${dm ? 'text-gray-300' : 'text-gray-600'}`}>{driver.membershipRemarks}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -206,6 +252,8 @@ export default function DriversTricyclesTab({ dm }) {
   const [page, setPage]       = useState(1);
   const [openId, setOpenId]   = useState(null);
   const [busyTodaId, setBusyTodaId] = useState(null);
+  const [busyDriverId, setBusyDriverId] = useState(null);
+  const [driverRemarks, setDriverRemarks] = useState({});
   const [notice, setNotice]   = useState(null);
 
   async function loadData() {
@@ -227,6 +275,21 @@ export default function DriversTricyclesTab({ dm }) {
       : { type: 'error',   message: result.message || 'Failed.' });
     if (result?.toda) await loadData();
     setBusyTodaId(null);
+  }
+
+  async function reviewDriver(driverId, status) {
+    setBusyDriverId(driverId);
+    const remarks = driverRemarks[driverId] || '';
+    const result = await reviewAdminDriver(driverId, status, remarks);
+    setNotice(result?.message && !result?.error
+      ? { type: 'success', message: result.message }
+      : { type: 'error',   message: result?.message || 'Failed to update driver.' });
+    if (result?.message && !result?.error) {
+      setDriverRemarks(r => { const n = { ...r }; delete n[driverId]; return n; });
+      await loadData();
+    }
+    setBusyDriverId(null);
+    setTimeout(() => setNotice(null), 5000);
   }
 
   const filtered = useMemo(() => {
@@ -334,7 +397,19 @@ export default function DriversTricyclesTab({ dm }) {
             className="space-y-2">
             {paginated.map(driver => {
               const id = `${driver.driverId}-${driver.tricycleId || 'none'}`;
-              return <DriverRow key={id} driver={driver} dm={dm} open={openId === id} onToggle={() => setOpenId(p => p === id ? null : id)} />;
+              return (
+                <DriverRow
+                  key={id}
+                  driver={driver}
+                  dm={dm}
+                  open={openId === id}
+                  onToggle={() => setOpenId(p => p === id ? null : id)}
+                  onReview={(status) => reviewDriver(driver.driverId, status)}
+                  isBusy={busyDriverId === driver.driverId}
+                  remarks={driverRemarks[driver.driverId] || ''}
+                  onRemarksChange={(val) => setDriverRemarks(r => ({ ...r, [driver.driverId]: val }))}
+                />
+              );
             })}
           </div>
         )}

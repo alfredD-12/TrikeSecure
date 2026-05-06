@@ -103,18 +103,31 @@ app.use(helmet({
 app.use(express.json({ limit: '10kb' }));
 app.use('/uploads', express.static(uploadsRoot));
 
-const enableApiRateLimit = config.isProduction || process.env.ENABLE_API_RATE_LIMIT === 'true';
-
-if (enableApiRateLimit) {
-  const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 200,
+if (
+  (config.isProduction || process.env.ENABLE_API_RATE_LIMIT === 'true') &&
+  process.env.DISABLE_RATE_LIMIT !== 'true'
+) {
+  // Strict limiter — only on auth mutation endpoints (brute-force / credential stuffing protection)
+  // Normal users will never hit this; only automated attacks will.
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 20,                   // 20 login/register attempts per IP per window
     standardHeaders: true,
     legacyHeaders: false,
-    message: { message: 'Too many requests. Please try again later.' },
+    message: { message: 'Too many attempts. Please try again in 15 minutes.' },
   });
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register', authLimiter);
 
-  app.use('/api', apiLimiter);
+  // Moderate limiter — admin write operations only (not reads/polls)
+  const adminWriteLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 60,             // 60 admin writes per minute per IP
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: 'Too many requests. Please slow down.' },
+  });
+  app.use('/api/admin', adminWriteLimiter);
 }
 
 app.use(session({

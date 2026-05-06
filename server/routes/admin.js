@@ -392,6 +392,41 @@ router.get('/drivers', async (req, res) => {
   }
 });
 
+router.patch('/drivers/:id/review', async (req, res) => {
+  const driverId = parsePositiveInt(req.params.id);
+  const nextStatus = normalizeOptionalText(req.body.status);
+  const remarks = normalizeOptionalText(req.body.remarks);
+
+  if (!driverId) {
+    return res.status(400).json({ message: 'Invalid driver ID.' });
+  }
+  if (!['approved', 'rejected', 'suspended'].includes(nextStatus)) {
+    return res.status(400).json({ message: 'Status must be approved, rejected, or suspended.' });
+  }
+
+  try {
+    const [existing] = await db.query(
+      'SELECT driver_id FROM drivers WHERE driver_id = ? LIMIT 1',
+      [driverId]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ message: 'Driver not found.' });
+    }
+
+    await db.query(
+      `UPDATE drivers
+       SET membership_status = ?, membership_reviewed_at = NOW(), membership_remarks = ?
+       WHERE driver_id = ?`,
+      [nextStatus, remarks, driverId]
+    );
+
+    return res.json({ message: `Driver membership ${nextStatus}.` });
+  } catch (error) {
+    console.error('Admin driver review error:', error);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 router.get('/franchises', async (req, res) => {
   const statusFilter = normalizeOptionalText(req.query.status);
 

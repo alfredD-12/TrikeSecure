@@ -290,6 +290,14 @@ export async function reviewAdminFranchise(franchiseId, payload) {
   });
 }
 
+export async function reviewAdminDriver(driverId, status, remarks = '') {
+  return apiFetch(`/admin/drivers/${driverId}/review`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, remarks }),
+  });
+}
+
 export async function searchDriversByBodyNumber(plateNumber) {
   const params = new URLSearchParams();
   if (plateNumber) {
