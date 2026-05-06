@@ -1,8 +1,9 @@
-import { useEffect, useState, useMemo } from 'react';
+import { createElement, useCallback, useEffect, useState, useMemo } from 'react';
 import { Shield, Car, CheckCircle2, Loader2, FileText, Mail, CalendarDays, Hash, XCircle, Eye, ExternalLink, ChevronDown, Search, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getAdminFranchises, reviewAdminFranchise } from '../../services/api';
 
 const PAGE_SIZE = 10;
+const LIVE_REFRESH_MS = 5000;
 const ANIM = `@keyframes f-page-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}`;
 
 /* ── helpers ── */
@@ -57,11 +58,11 @@ function Banner({ notice, dm }) {
   return <div className={`mb-5 rounded-2xl border px-4 py-3 text-sm font-bold ${cls}`}>{notice.message}</div>;
 }
 
-function Metric({ dm, label, value, icon: Icon, color }) {
+function Metric({ dm, label, value, icon, color }) {
   return (
     <GlassCard dm={dm} className="p-5">
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
-        <Icon size={18} style={{ color }} />
+        {createElement(icon, { size: 18, style: { color } })}
       </div>
       <p className={`text-3xl font-black ${dm ? 'text-white' : 'text-gray-900'}`}>{value}</p>
       <p className={`mt-1 text-[10px] font-bold uppercase tracking-wide ${dm ? 'text-gray-500' : 'text-gray-400'}`}>{label}</p>
@@ -239,22 +240,46 @@ export default function FranchisesTab({ dm }) {
   const [busyId, setBusyId]         = useState(null);
   const [forms, setForms]           = useState({});
 
-  async function loadData() {
-    setLoading(true);
-    const result = await getAdminFranchises();
-    if (Array.isArray(result)) {
-      setFranchises(result);
-      setForms(cur => {
-        const next = { ...cur };
-        result.forEach(item => { next[item.franchiseId] = { ...defaultForm(item), ...(cur[item.franchiseId] || {}) }; });
-        return next;
-      });
-    } else {
-      setNotice({ type: 'error', message: result.message || 'Failed to load franchises.' });
+  const loadData = useCallback(async (withSpinner = false) => {
+    if (withSpinner) setLoading(true);
+
+    try {
+      const result = await getAdminFranchises();
+      if (Array.isArray(result)) {
+        setFranchises(result);
+        setForms(cur => {
+          const next = { ...cur };
+          result.forEach(item => { next[item.franchiseId] = { ...defaultForm(item), ...(cur[item.franchiseId] || {}) }; });
+          return next;
+        });
+      } else {
+        setNotice({ type: 'error', message: result.message || 'Failed to load franchises.' });
+      }
+    } catch {
+      setNotice({ type: 'error', message: 'Failed to refresh franchise applications.' });
+    } finally {
+      if (withSpinner) setLoading(false);
     }
-    setLoading(false);
-  }
-  useEffect(() => { loadData(); }, []);
+  }, []);
+
+  useEffect(() => {
+    loadData(true);
+
+    const refreshLiveData = () => {
+      if (document.hidden) return;
+      loadData(false);
+    };
+
+    const interval = setInterval(refreshLiveData, LIVE_REFRESH_MS);
+    window.addEventListener('focus', refreshLiveData);
+    document.addEventListener('visibilitychange', refreshLiveData);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshLiveData);
+      document.removeEventListener('visibilitychange', refreshLiveData);
+    };
+  }, [loadData]);
 
   function updateForm(id, key, val) {
     setForms(cur => ({ ...cur, [id]: { ...defaultForm({}), ...(cur[id]||{}), [key]: val } }));

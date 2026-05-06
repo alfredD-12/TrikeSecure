@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   CarFront, ScanLine, ClipboardList, User,
   AlertCircle, ChevronDown, Hash, ShieldCheck, LogOut, ChevronRight, QrCode,
-  LocateFixed, MapPin, X, Camera, CheckCircle2, Phone, Clock, Navigation, Route, Truck, Loader2,
+  LocateFixed, MapPin, X, Camera, CheckCircle2, Phone, Clock, Navigation, Route, Truck, Loader2, RefreshCw,
   History, FileText, Siren, HeadphonesIcon, Mail, ChevronLeft, Eye, EyeOff, Lock, Save, Pencil, Weight, Users2, HelpCircle
 } from 'lucide-react';
 import { animate, stagger, createTimeline } from 'animejs';
@@ -645,6 +645,7 @@ export default function CommuterView({ mapRef }) {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [cameras, setCameras] = useState([]);
   const [selectedCameraId, setSelectedCameraId] = useState(null);
+  const [scanRefreshKey, setScanRefreshKey] = useState(0);
   const prevPinTargetRef = useRef(null);
   const scannerRef = useRef(null);
   const scannerLockedRef = useRef(false);
@@ -1124,6 +1125,12 @@ export default function CommuterView({ mapRef }) {
     }
   }
 
+  function refreshScannerCamera() {
+    setScanError('');
+    setScanStatus('starting');
+    setScanRefreshKey((key) => key + 1);
+  }
+
   async function fetchScanResult(rawValue) {
     const code = (rawValue || '').trim();
     if (!code) return;
@@ -1157,7 +1164,7 @@ export default function CommuterView({ mapRef }) {
         });
       }).catch(() => {});
     });
-  }, [activeTab]);
+  }, [activeTab, scanRefreshKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1217,7 +1224,7 @@ export default function CommuterView({ mapRef }) {
       cancelled = true;
       stopScanner();
     };
-  }, [activeTab, selectedCameraId]);
+  }, [activeTab, selectedCameraId, scanRefreshKey]);
 
   async function doLogout() {
     await logout();
@@ -1719,6 +1726,20 @@ export default function CommuterView({ mapRef }) {
           <div className="v-anim v-anim--2 mb-4">
             <div className="v-scanner-box mb-3 relative overflow-hidden" data-tour="scan-camera">
               <div id="commuter-qr-reader" className="absolute inset-0 z-0" />
+              <button
+                type="button"
+                onClick={refreshScannerCamera}
+                disabled={scanStatus === 'starting'}
+                title="Refresh camera"
+                aria-label="Refresh camera"
+                className={`absolute right-3 top-3 z-40 flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition active:scale-95 disabled:opacity-60 ${
+                  darkMode
+                    ? 'border-white/10 bg-slate-900/85 text-gray-200 hover:bg-slate-800'
+                    : 'border-gray-200 bg-white/90 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <RefreshCw size={15} className={scanStatus === 'starting' ? 'animate-spin' : ''} />
+              </button>
               {/* Centered square scan area with corner brackets inside */}
               <div
                 className="absolute z-20 pointer-events-none"

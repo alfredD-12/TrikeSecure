@@ -69,6 +69,8 @@ function statusChip(value) {
   return `inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${palette[tone] || 'border-slate-200 bg-slate-50 text-slate-700'}`;
 }
 
+const PROFILE_LIVE_REFRESH_MS = 5000;
+
 function summaryCard(icon, label, value, accentClass) {
   return (
     <div className="rounded-[24px] border border-white/60 bg-white/90 p-4 shadow-[0_16px_50px_rgba(15,23,42,0.08)] backdrop-blur">
@@ -657,6 +659,7 @@ export default function DriverView({ mapRef }) {
   });
   const lastLocationUpdateRef = useRef(0);
   const knownRidesRef = useRef(new Set());
+  const profileRefreshInFlightRef = useRef(false);
   // Account sub-view state
   const [driverAccountView, setDriverAccountView] = useState('main'); // main | franchise | history | support | profile
   const [driverTripHistory, setDriverTripHistory] = useState([]);
@@ -847,7 +850,7 @@ export default function DriverView({ mapRef }) {
     } finally {
       setRidesLoading(false);
     }
-  }, [dutyOn, driverProfile?.canOperate, loadDriverData]);
+  }, [dutyOn, driverProfile?.canOperate, loadDriverData, setPendingRides]);
 
   const loadFuelPrices = useCallback(async () => {
     setFuelLoading(true);
@@ -864,7 +867,7 @@ export default function DriverView({ mapRef }) {
   const loadActiveDriverRide = useCallback(async () => {
     const result = await getActiveRide();
     setActiveDriverRide(result?.ride || null);
-  }, []);
+  }, [setActiveDriverRide]);
 
   useEffect(() => {
     setRidesLoading(true);
@@ -881,6 +884,39 @@ export default function DriverView({ mapRef }) {
   }, [loadDriverData]);
 
   useEffect(() => {
+    const shouldLiveRefreshProfile = !driverProfile?.canOperate || showPresidentTab || activeTab === 'account' || activeTab === 'president';
+    if (!shouldLiveRefreshProfile) return undefined;
+
+    let cancelled = false;
+
+    const refreshProfile = async () => {
+      if (cancelled || document.hidden || profileRefreshInFlightRef.current) return;
+
+      profileRefreshInFlightRef.current = true;
+      try {
+        await loadDriverData(false);
+      } catch {
+        if (!cancelled) {
+          setProfileError('Failed to refresh driver account.');
+        }
+      } finally {
+        profileRefreshInFlightRef.current = false;
+      }
+    };
+
+    const interval = setInterval(refreshProfile, PROFILE_LIVE_REFRESH_MS);
+    window.addEventListener('focus', refreshProfile);
+    document.addEventListener('visibilitychange', refreshProfile);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshProfile);
+      document.removeEventListener('visibilitychange', refreshProfile);
+    };
+  }, [activeTab, driverProfile?.canOperate, loadDriverData, showPresidentTab]);
+
+  useEffect(() => {
     loadFuelPrices().catch(() => {
       setFuelError('Fuel prices are temporarily unavailable.');
       setFuelLoading(false);
@@ -894,7 +930,7 @@ export default function DriverView({ mapRef }) {
     }
 
     loadActiveDriverRide().catch(() => setActiveDriverRide(null));
-  }, [driverProfile?.canOperate, loadActiveDriverRide]);
+  }, [driverProfile?.canOperate, loadActiveDriverRide, setActiveDriverRide]);
 
   useEffect(() => {
     const canShareLocation = activeDriverRide?.requestId

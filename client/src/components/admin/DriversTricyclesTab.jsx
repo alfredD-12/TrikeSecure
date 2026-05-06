@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { createElement, useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Building2, Users, Car, CheckCircle2, Loader2, Mail, Phone,
   ExternalLink, Eye, ChevronDown, Search, X, ChevronLeft, ChevronRight,
@@ -7,6 +7,7 @@ import {
 import { getAdminDrivers, getAdminTodas, reviewAdminToda, reviewAdminDriver } from '../../services/api';
 
 const PAGE_SIZE = 10;
+const LIVE_REFRESH_MS = 5000;
 
 const ANIM_CSS = `
 @keyframes dt-page-in {
@@ -68,11 +69,11 @@ function Banner({ notice, dm }) {
   return <div className={`mb-5 rounded-2xl border px-4 py-3 text-sm font-bold ${tone}`}>{notice.message}</div>;
 }
 
-function Metric({ dm, label, value, icon: Icon, color }) {
+function Metric({ dm, label, value, icon, color }) {
   return (
     <GlassCard dm={dm} className="p-5">
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
-        <Icon size={18} style={{ color }} />
+        {createElement(icon, { size: 18, style: { color } })}
       </div>
       <p className={`text-3xl font-black ${dm ? 'text-white' : 'text-gray-900'}`}>{value}</p>
       <p className={`text-[10px] font-bold uppercase tracking-wide mt-1 ${dm ? 'text-gray-500' : 'text-gray-400'}`}>{label}</p>
@@ -256,16 +257,40 @@ export default function DriversTricyclesTab({ dm }) {
   const [driverRemarks, setDriverRemarks] = useState({});
   const [notice, setNotice]   = useState(null);
 
-  async function loadData() {
-    setLoading(true);
-    const [todaRes, driverRes] = await Promise.all([getAdminTodas('pending'), getAdminDrivers()]);
-    if (Array.isArray(todaRes)) setTodas(todaRes);
-    else setNotice({ type: 'error', message: todaRes.message || 'Failed to load TODA applications.' });
-    if (Array.isArray(driverRes)) setDrivers(driverRes);
-    else setNotice({ type: 'error', message: driverRes.message || 'Failed to load drivers.' });
-    setLoading(false);
-  }
-  useEffect(() => { loadData(); }, []);
+  const loadData = useCallback(async (withSpinner = false) => {
+    if (withSpinner) setLoading(true);
+
+    try {
+      const [todaRes, driverRes] = await Promise.all([getAdminTodas('pending'), getAdminDrivers()]);
+      if (Array.isArray(todaRes)) setTodas(todaRes);
+      else setNotice({ type: 'error', message: todaRes.message || 'Failed to load TODA applications.' });
+      if (Array.isArray(driverRes)) setDrivers(driverRes);
+      else setNotice({ type: 'error', message: driverRes.message || 'Failed to load drivers.' });
+    } catch {
+      setNotice({ type: 'error', message: 'Failed to refresh admin driver data.' });
+    } finally {
+      if (withSpinner) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData(true);
+
+    const refreshLiveData = () => {
+      if (document.hidden) return;
+      loadData(false);
+    };
+
+    const interval = setInterval(refreshLiveData, LIVE_REFRESH_MS);
+    window.addEventListener('focus', refreshLiveData);
+    document.addEventListener('visibilitychange', refreshLiveData);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshLiveData);
+      document.removeEventListener('visibilitychange', refreshLiveData);
+    };
+  }, [loadData]);
 
   async function reviewToda(todaId, status) {
     setBusyTodaId(todaId);

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Clock3, FileText, Loader2, Users, XCircle, Eye, ExternalLink } from 'lucide-react';
 import { getPresidentMembershipRequests, reviewPresidentMembershipRequest } from '../../services/api';
+
+const LIVE_REFRESH_MS = 5000;
 
 function chipClass(status) {
   const tone = String(status || 'unknown').toLowerCase();
@@ -33,29 +35,52 @@ export default function PresidentMembershipTab({ enabled, pendingCount = 0, onAf
   const [requestData, setRequestData] = useState({ todaName: '', requests: [] });
   const [remarks, setRemarks] = useState({});
 
-  async function loadRequests(nextStatus = statusFilter) {
+  const loadRequests = useCallback(async (nextStatus = statusFilter, withSpinner = false) => {
     if (!enabled) {
       setLoading(false);
       return;
     }
 
-    setLoading(true);
-    const result = await getPresidentMembershipRequests(nextStatus);
+    if (withSpinner) setLoading(true);
 
-    if (result?.requests) {
-      setRequestData(result);
-      setNotice(null);
-    } else {
+    try {
+      const result = await getPresidentMembershipRequests(nextStatus);
+
+      if (result?.requests) {
+        setRequestData(result);
+        if (withSpinner) setNotice(null);
+        return;
+      }
+
       setRequestData({ todaName: '', requests: [] });
       setNotice({ type: 'error', message: result.message || 'Failed to load membership requests.' });
+    } catch {
+      setNotice({ type: 'error', message: 'Failed to refresh membership requests.' });
+    } finally {
+      if (withSpinner) setLoading(false);
     }
-
-    setLoading(false);
-  }
+  }, [enabled, statusFilter]);
 
   useEffect(() => {
-    loadRequests(statusFilter);
-  }, [statusFilter, enabled]);
+    loadRequests(statusFilter, true);
+
+    if (!enabled) return undefined;
+
+    const refreshRequests = () => {
+      if (document.hidden) return;
+      loadRequests(statusFilter, false);
+    };
+
+    const interval = setInterval(refreshRequests, LIVE_REFRESH_MS);
+    window.addEventListener('focus', refreshRequests);
+    document.addEventListener('visibilitychange', refreshRequests);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshRequests);
+      document.removeEventListener('visibilitychange', refreshRequests);
+    };
+  }, [enabled, loadRequests, statusFilter]);
 
   async function handleReview(driverId, status) {
     setReviewingId(driverId);
@@ -66,7 +91,7 @@ export default function PresidentMembershipTab({ enabled, pendingCount = 0, onAf
 
     if (result?.message && !result?.driver) {
       setNotice({ type: 'success', message: result.message });
-      await loadRequests(statusFilter);
+      await loadRequests(statusFilter, false);
       if (onAfterReview) {
         await onAfterReview();
       }
