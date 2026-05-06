@@ -47,6 +47,7 @@
 /* ─── Tab Fade ────────────────────────────────────────────── */
 .tab-content { display: none; opacity: 0; }
 .tab-content.active { display: block; animation: fadeIn 0.3s ease forwards; }
+.tab-content.active.tab-content--fill { display: flex; flex-direction: column; }
 
 @keyframes fadeIn {
   from { opacity: 0; }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { translations } from '../utils/translations';
 import { getMe } from '../services/api';
 
@@ -34,6 +34,8 @@ export function AppProvider({ children }) {
   const [pendingRides, setPendingRides] = useState([]);
   const [activeDriverRide, setActiveDriverRide] = useState(null);
   const [activeCommuterRide, setActiveCommuterRide] = useState(null);
+  const translationRequestsRef = useRef(new Set());
+  const translationInFlightRef = useRef(new Set());
   // Initialize dynamicDict from localStorage
   const [dynamicDict, setDynamicDict] = useState(() => {
     try {
@@ -128,37 +130,61 @@ export function AppProvider({ children }) {
     window._fetchingDict = {};
   }, [lang]);
 
-  const t = useCallback((text) => {
-    // 1. Fallback to existing translations.js static keys
-    if (translations[lang]?.[text]) return translations[lang][text];
-    
-    // 2. Base case: If English or empty
-    if (lang === 'en' || !text) return text;
-
-    // 3. Dynamic cache check
-    const cacheKey = `${lang}_${text}`;
-    if (dynamicDict[cacheKey]) return dynamicDict[cacheKey];
-
-    // 4. Auto-fetch from Google Translate API
-    if (!window._fetchingDict) window._fetchingDict = {};
-    if (!window._fetchingDict[cacheKey] && typeof text === 'string') {
-      window._fetchingDict[cacheKey] = true;
-      
-      fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data && data[0]) {
-            const translated = data[0].map(x => x[0]).join('');
-            setDynamicDict(prev => ({ ...prev, [cacheKey]: translated }));
-          }
-        })
-        .catch(err => {
-          console.error('Translation error:', err);
-          window._fetchingDict[cacheKey] = false;
-        });
+  useEffect(() => {
+    if (lang === 'en') {
+      translationRequestsRef.current.clear();
+      translationInFlightRef.current.clear();
+      return;
     }
 
-    // 5. Return original text temporarily while fetching
+    const pendingKeys = Array.from(translationRequestsRef.current).filter((cacheKey) => {
+      return !dynamicDict[cacheKey] && !translationInFlightRef.current.has(cacheKey);
+    });
+
+    if (pendingKeys.length === 0) {
+      return;
+    }
+
+    translationRequestsRef.current.clear();
+
+    pendingKeys.forEach((cacheKey) => {
+      const separatorIndex = cacheKey.indexOf('_');
+      const requestLang = separatorIndex >= 0 ? cacheKey.slice(0, separatorIndex) : lang;
+      const text = separatorIndex >= 0 ? cacheKey.slice(separatorIndex + 1) : cacheKey;
+
+      if (!text || translationInFlightRef.current.has(cacheKey) || dynamicDict[cacheKey]) {
+        return;
+      }
+
+      translationInFlightRef.current.add(cacheKey);
+
+      fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${requestLang}&dt=t&q=${encodeURIComponent(text)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data[0]) {
+            const translated = data[0].map((segment) => segment[0]).join('');
+            setDynamicDict((prev) => ({ ...prev, [cacheKey]: translated }));
+          }
+        })
+        .catch((err) => {
+          console.error('Translation error:', err);
+        })
+        .finally(() => {
+          translationInFlightRef.current.delete(cacheKey);
+        });
+    });
+  }, [lang, dynamicDict]);
+
+  const t = useCallback((text) => {
+    if (translations[lang]?.[text]) return translations[lang][text];
+    if (lang === 'en' || !text) return text;
+
+    const cacheKey = `${lang}_${text}`;
+    const cachedTranslation = dynamicDict[cacheKey];
+    if (cachedTranslation) return cachedTranslation;
+
+    translationRequestsRef.current.add(cacheKey);
+
     return text;
   }, [lang, dynamicDict]);
 

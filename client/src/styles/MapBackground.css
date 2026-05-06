@@ -80,3 +80,28 @@ body.dark-mode #map-container {
   70%  { transform: scale(3);   opacity: 0; }
   100% { transform: scale(3);   opacity: 0; }
 }
+
+/* ─── Strip Leaflet popup chrome for v-ride-toast ────────── */
+.leaflet-popup-content-wrapper {
+  padding: 0 !important;
+  border-radius: 20px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  width: auto !important;
+}
+
+/* Hide the default arrow tip */
+.leaflet-popup-tip-container {
+  display: none !important;
+}
+
+/* Dark mode: ensure the popup itself is transparent */
+body.dark-mode .leaflet-popup-content-wrapper {
+  background: transparent !important;
+}
+

@@ -50,6 +50,17 @@ function isValidCoordinate(lat, lng) {
     && lng <= 180;
 }
 
+function calculateHaversineDistanceKm(lat1, lon1, lat2, lon2) {
+  const R = 6371; // radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
 function getFreshDriverLocation(driverId) {
   const location = driverLocations.get(driverId);
   if (!location) {
@@ -298,6 +309,20 @@ router.post('/request', requireAuth, requireRole('commuter'), async (req, res) =
       });
     }
 
+    let fareAmount = null;
+    if (pickupLat && pickupLng && dropoffLat && dropoffLng) {
+      const distanceKm = calculateHaversineDistanceKm(pickupLat, pickupLng, dropoffLat, dropoffLng);
+      const [fareRows] = await db.query('SELECT * FROM fare_settings ORDER BY effective_date DESC LIMIT 1');
+      if (fareRows.length > 0) {
+        const { base_fare, base_distance_km, per_km_rate } = fareRows[0];
+        let calc = Number(base_fare);
+        if (distanceKm > base_distance_km) {
+          calc += (distanceKm - base_distance_km) * Number(per_km_rate);
+        }
+        fareAmount = Math.round(calc * 100) / 100;
+      }
+    }
+
     const [result] = await db.query(
       `
         INSERT INTO ride_requests (
@@ -308,11 +333,12 @@ router.post('/request', requireAuth, requireRole('commuter'), async (req, res) =
           pickup_lng,
           dropoff_lat,
           dropoff_lng,
+          fare_amount,
           status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'waiting')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'waiting')
       `,
-      [req.session.userId, pickup, dropoff || '', pickupLat, pickupLng, dropoffLat, dropoffLng],
+      [req.session.userId, pickup, dropoff || '', pickupLat, pickupLng, dropoffLat, dropoffLng, fareAmount],
     );
 
     const ride = await getRideDetails(db, result.insertId);
@@ -439,6 +465,10 @@ router.post('/:id/driver-location', requireAuth, requireRole('driver'), async (r
       });
     }
 
+    if (!driverContext.driverId) {
+      return res.status(403).json({ message: 'Driver profile not found.' });
+    }
+
     const [rows] = await db.query(
       `
         SELECT request_id, assigned_driver_id, status
@@ -472,7 +502,12 @@ router.post('/:id/driver-location', requireAuth, requireRole('driver'), async (r
       driverLocation: getFreshDriverLocation(driverContext.driverId),
     });
   } catch (error) {
-    console.error('Driver ride location update error:', error);
+    console.error('Driver ride location update error:', {
+      message: error.message,
+      code: error.code,
+      sql: error.sql,
+      stack: error.stack,
+    });
     return res.status(500).json({ message: 'Server error.' });
   }
 });
@@ -529,6 +564,8 @@ router.get('/nearby', requireAuth, requireRole('driver'), async (req, res) => {
           r.request_time,
           r.pickup_lat,
           r.pickup_lng,
+          r.dropoff_lat,
+          r.dropoff_lng,
           commuter.full_name AS commuter_name
         FROM ride_requests r
         INNER JOIN users commuter ON commuter.user_id = r.commuter_id
@@ -541,6 +578,9 @@ router.get('/nearby', requireAuth, requireRole('driver'), async (req, res) => {
       ...row,
       pickup_lat: roundCoordinate(row.pickup_lat),
       pickup_lng: roundCoordinate(row.pickup_lng),
+      // dropoff coords are NOT rounded/blurred — they are the destination, not the person's location
+      dropoff_lat: row.dropoff_lat == null ? null : Number(row.dropoff_lat),
+      dropoff_lng: row.dropoff_lng == null ? null : Number(row.dropoff_lng),
       pickup_precision: 'approximate',
     })));
   } catch (error) {
@@ -674,10 +714,20 @@ router.get('/driver-profile', requireAuth, requireRole('driver'), async (req, re
           COALESCE(SUM(CASE
             WHEN status = 'completed' AND DATE(COALESCE(completed_at, request_time)) = CURDATE() THEN fare_amount
             ELSE 0
-          END), 0) AS todayEarnings
+          END), 0) AS todayEarnings,
+          COUNT(CASE WHEN status = 'completed' THEN 1 END) AS overallTrips,
+          COALESCE(SUM(CASE WHEN status = 'completed' THEN fare_amount ELSE 0 END), 0) AS overallEarnings
         FROM ride_requests
         WHERE assigned_driver_id = ?
       `,
+      [driverState.driverId || 0],
+    );
+
+    const [[ratingRow]] = await db.query(
+      `SELECT ROUND(AVG(rr.rating_value), 1) AS averageRating, COUNT(*) AS totalRatings
+       FROM ride_ratings rr
+       INNER JOIN ride_requests r ON r.request_id = rr.request_id
+       WHERE r.assigned_driver_id = ?`,
       [driverState.driverId || 0],
     );
 
@@ -685,6 +735,10 @@ router.get('/driver-profile', requireAuth, requireRole('driver'), async (req, re
       ...driverState,
       todayTrips: Number(stats.todayTrips || 0),
       todayEarnings: Number(stats.todayEarnings || 0),
+      overallTrips: Number(stats.overallTrips || 0),
+      overallEarnings: Number(stats.overallEarnings || 0),
+      averageRating: ratingRow?.averageRating != null ? Number(ratingRow.averageRating) : null,
+      totalRatings: Number(ratingRow?.totalRatings || 0),
     });
   } catch (error) {
     console.error('Driver profile error:', error);
@@ -742,6 +796,54 @@ router.get('/history', requireAuth, async (req, res) => {
     res.json({ rides });
   } catch (error) {
     console.error('Ride history error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// GET /api/rides/driver-history - driver's own completed ride list
+router.get('/driver-history', requireAuth, requireRole('driver'), async (req, res) => {
+  const { limit = 30, offset = 0 } = req.query;
+  try {
+    const driverState = await getDriverDashboardState(db, req.session.userId);
+    const driverId = driverState.driverId;
+    if (!driverId) return res.json({ rides: [] });
+
+    const [rows] = await db.query(
+      `
+        SELECT
+          r.request_id,
+          r.pickup_location,
+          r.dropoff_location,
+          r.fare_amount,
+          r.request_time,
+          r.completed_at,
+          r.status,
+          rr.rating_value,
+          rr.feedback
+        FROM ride_requests r
+        LEFT JOIN ride_ratings rr ON rr.request_id = r.request_id
+        WHERE r.assigned_driver_id = ? AND r.status = 'completed'
+        ORDER BY COALESCE(r.completed_at, r.request_time) DESC
+        LIMIT ? OFFSET ?
+      `,
+      [driverId, Number(limit) || 30, Number(offset) || 0]
+    );
+
+    const rides = rows.map((row) => ({
+      id: row.request_id,
+      pickupLocation: row.pickup_location,
+      dropoffLocation: row.dropoff_location,
+      fareAmount: row.fare_amount != null ? Number(row.fare_amount) : null,
+      requestTime: row.request_time,
+      completedAt: row.completed_at,
+      status: row.status,
+      rating: row.rating_value != null ? Number(row.rating_value) : null,
+      feedback: row.feedback || null,
+    }));
+
+    res.json({ rides });
+  } catch (error) {
+    console.error('Driver history error:', error);
     res.status(500).json({ message: 'Server error.' });
   }
 });

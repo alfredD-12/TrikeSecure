@@ -32,11 +32,13 @@ router.get('/qr/:value', async (req, res) => {
           u.user_id,
           u.full_name,
           u.username,
-          u.status AS user_status
+          u.status AS user_status,
+          f.lgu_reference_no
         FROM tricycles t
         INNER JOIN drivers d ON d.driver_id = t.driver_id
         INNER JOIN users u ON u.user_id = d.user_id
         LEFT JOIN todas td ON td.toda_id = t.toda_id
+        LEFT JOIN franchises f ON f.tricycle_id = t.tricycle_id
         WHERE t.qr_code_value = ? OR t.body_number = ?
         LIMIT 1
       `,
@@ -54,6 +56,7 @@ router.get('/qr/:value', async (req, res) => {
       plateNumber: record.plate_number,
       qrCodeValue: record.qr_code_value,
       todaName: record.toda_name || '',
+      lguReferenceNo: record.lgu_reference_no || '',
       tricycleStatus: record.tricycle_status,
       franchiseExpiry: record.franchise_expiry,
       driver: {

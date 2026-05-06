@@ -113,6 +113,13 @@ const destIcon = L.divIcon({
   popupAnchor: [0, -66],
 });
 
+// Returns a straight-line [lat,lng] pair for the route polyline.
+// Previously used OSRM but the public demo server blocks cross-origin browser
+// requests; haversine straight-line is sufficient for the route overlay.
+function fetchRoute(startLng, startLat, endLng, endLat) {
+  return Promise.resolve([[startLat, startLng], [endLat, endLng]]);
+}
+
 // Draws OSRM road route between pickup and destination
 function RouteLayer() {
   const { userPickup, destinationPin, activeCommuterRide, activeDriverRide } = useApp();
@@ -128,32 +135,30 @@ function RouteLayer() {
     if (activeCommuterRide || activeDriverRide || !userPickup || !destinationPin) return;
 
     let isMounted = true;
-    const url = `https://router.project-osrm.org/route/v1/driving/` +
-      `${userPickup.lng},${userPickup.lat};${destinationPin.lng},${destinationPin.lat}` +
-      `?overview=full&geometries=geojson`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
 
-    fetch(url)
-      .then(r => r.json())
-      .then(data => {
-        if (!isMounted || !map || !map.getContainer()) return;
-        const coords = data?.routes?.[0]?.geometry?.coordinates;
-        if (!coords) return;
-        // OSRM returns [lng, lat], Leaflet needs [lat, lng]
-        const latLngs = coords.map(([lng, lat]) => [lat, lng]);
-        polylineRef.current = L.polyline(latLngs, {
-          color: '#1d4ed8',
-          weight: 6,
-          opacity: 0.85,
-          lineJoin: 'round',
-          lineCap: 'round',
-        }).addTo(map);
-        // Fit map to show entire route
-        map.fitBounds(polylineRef.current.getBounds(), { padding: [60, 60] });
-      })
-      .catch(() => {});
+    fetchRoute(
+      userPickup.lng, userPickup.lat,
+      destinationPin.lng, destinationPin.lat,
+      controller.signal
+    ).then(latLngs => {
+      clearTimeout(timeoutId);
+      if (!isMounted || !map || !map.getContainer()) return;
+      polylineRef.current = L.polyline(latLngs, {
+        color: '#1d4ed8',
+        weight: 6,
+        opacity: 0.85,
+        lineJoin: 'round',
+        lineCap: 'round',
+      }).addTo(map);
+      map.fitBounds(polylineRef.current.getBounds(), { padding: [60, 60] });
+    }).catch(() => { clearTimeout(timeoutId); });
 
     return () => {
       isMounted = false;
+      controller.abort();
+      clearTimeout(timeoutId);
       if (polylineRef.current) { polylineRef.current.remove(); polylineRef.current = null; }
     };
   }, [userPickup, destinationPin, activeCommuterRide, activeDriverRide, map]);
@@ -325,6 +330,22 @@ function CommuterRequestMarkers() {
   const [acceptingId, setAcceptingId] = useState(null);
   const [errorId, setErrorId] = useState(null);
 
+  function haversineKm(lat1, lng1, lat2, lng2) {
+    if (lat1 == null || lng1 == null || lat2 == null || lng2 == null) return null;
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function fmtDist(lat1, lng1, lat2, lng2) {
+    const km = haversineKm(lat1, lng1, lat2, lng2);
+    if (km == null) return null;
+    return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
+  }
+
   async function acceptFromMap(rideId) {
     setAcceptingId(rideId);
     setErrorId(null);
@@ -338,7 +359,6 @@ function CommuterRequestMarkers() {
         if (data?.ride) {
           setActiveDriverRide(data.ride);
         }
-        // Optimistic removal — next poll from DriverView will confirm
         setPendingRides(prev => prev.filter(r => r.request_id !== rideId));
       } else {
         setErrorId(rideId);
@@ -352,8 +372,6 @@ function CommuterRequestMarkers() {
     }
   }
 
-  const popupStyle = { fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", padding: '4px 2px', minWidth: '200px' };
-
   if (activeDriverRide) {
     return null;
   }
@@ -362,53 +380,82 @@ function CommuterRequestMarkers() {
     <>
       {pendingRides
         .filter(r => r.pickup_lat != null && r.pickup_lng != null)
-        .map(r => (
-          <Fragment key={r.request_id}>
-          <Circle
-            center={[r.pickup_lat, r.pickup_lng]}
-            radius={180}
-            pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.12, weight: 2, opacity: 0.45 }}
-          />
-          <Marker position={[r.pickup_lat, r.pickup_lng]} icon={commuterRequestIcon}>
-            <Popup>
-              <div style={popupStyle}>
-                <div style={{ fontWeight: 700, color: '#ea580c', fontSize: '13px', marginBottom: '6px' }}>🙋 Ride Request</div>
-                <div style={{ fontWeight: 700, color: '#1f2937', fontSize: '14px' }}>{r.commuter_name}</div>
-                <div style={{ color: '#6b7280', fontSize: '12px', marginTop: '4px' }}>📍 {r.pickup_location}</div>
-                {r.dropoff_location && (
-                  <div style={{ color: '#6b7280', fontSize: '12px', marginTop: '2px' }}>🏁 {r.dropoff_location}</div>
-                )}
-                <div style={{ color: '#9ca3af', fontSize: '11px', marginTop: '6px', fontWeight: 600 }}>
-                  Exact pickup unlocks after accepting the ride.
-                </div>
-                <div style={{ marginTop: '10px', display: 'flex', gap: '6px' }}>
-                  <button
-                    onClick={() => acceptFromMap(r.request_id)}
-                    disabled={acceptingId === r.request_id}
-                    style={{
-                      flex: 1, background: acceptingId === r.request_id ? '#86efac' : '#22c55e',
-                      color: 'white', border: 'none', borderRadius: '8px',
-                      padding: '7px 10px', fontWeight: 700, fontSize: '12px',
-                      cursor: acceptingId === r.request_id ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    {acceptingId === r.request_id ? 'Accepting…' : '✓ Accept Ride'}
-                  </button>
-                </div>
-                {errorId === r.request_id && (
-                  <div style={{ color: '#dc2626', fontSize: '11px', marginTop: '4px', fontWeight: 600 }}>
-                    Already taken — refreshing…
+        .map(r => {
+          const dist = fmtDist(r.pickup_lat, r.pickup_lng, r.dropoff_lat, r.dropoff_lng);
+          const isAccepting = acceptingId === r.request_id;
+          return (
+            <Fragment key={r.request_id}>
+            <Circle
+              center={[r.pickup_lat, r.pickup_lng]}
+              radius={180}
+              pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.12, weight: 2, opacity: 0.45 }}
+            />
+            <Marker position={[r.pickup_lat, r.pickup_lng]} icon={commuterRequestIcon}>
+              <Popup minWidth={220}>
+                <div className="v-ride-toast" style={{ animation: 'none' }}>
+                  <div className="v-ride-toast__header">
+                    <div className="v-ride-toast__label">
+                      <div className="v-ride-toast__label-icon">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                      </div>
+                      Ride Request
+                    </div>
                   </div>
-                )}
-              </div>
-            </Popup>
-          </Marker>
-          </Fragment>
-        ))
+
+                  <div className="v-ride-toast__route">
+                    <div className="v-ride-toast__route-row">
+                      <span className="v-ride-toast__dot v-ride-toast__dot--pickup" />
+                      <span className="v-ride-toast__route-text">{r.pickup_location || 'Pickup'}</span>
+                    </div>
+                    <div className="v-ride-toast__route-row">
+                      <span className="v-ride-toast__dot v-ride-toast__dot--dropoff" />
+                      <span className="v-ride-toast__route-text">{r.dropoff_location || 'Dropoff'}</span>
+                    </div>
+                  </div>
+
+                  <div className="v-ride-toast__pills">
+                    {r.fare_amount != null && (
+                      <div className="v-ride-toast__pill v-ride-toast__pill--fare">
+                        <span className="v-ride-toast__pill-label">Fare</span>
+                        <span className="v-ride-toast__pill-value">₱{Number(r.fare_amount).toFixed(2)}</span>
+                      </div>
+                    )}
+                    {dist && (
+                      <div className="v-ride-toast__pill v-ride-toast__pill--dist">
+                        <span className="v-ride-toast__pill-label">Distance</span>
+                        <span className="v-ride-toast__pill-value">{dist}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="v-ride-toast__actions">
+                    <button
+                      className="v-ride-toast__btn-accept"
+                      disabled={isAccepting}
+                      onClick={() => acceptFromMap(r.request_id)}
+                    >
+                      {isAccepting ? 'Accepting…' : '✓ Accept Ride'}
+                    </button>
+                  </div>
+
+                  {errorId === r.request_id && (
+                    <p className="v-ride-toast__note" style={{ color: '#dc2626', marginTop: '6px' }}>
+                      Already taken — refreshing…
+                    </p>
+                  )}
+
+                  <p className="v-ride-toast__note">Exact pickup unlocks after accepting.</p>
+                </div>
+              </Popup>
+            </Marker>
+            </Fragment>
+          );
+        })
       }
     </>
   );
 }
+
 
 function getActiveMapRide(view, activeDriverRide, activeCommuterRide) {
   return view === 'driver' ? activeDriverRide : activeCommuterRide;
@@ -536,36 +583,36 @@ function ActiveRideRouteLayer() {
     }
 
     let isMounted = true;
-    const url = `https://router.project-osrm.org/route/v1/driving/` +
-      `${routeStart.lng},${routeStart.lat};${routeEnd.lng},${routeEnd.lat}` +
-      `?overview=full&geometries=geojson`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
 
-    fetch(url)
-      .then(r => r.json())
-      .then(data => {
-        if (!isMounted || !map || !map.getContainer()) return;
-        const coords = data?.routes?.[0]?.geometry?.coordinates;
-        if (!coords) return;
+    fetchRoute(
+      routeStart.lng, routeStart.lat,
+      routeEnd.lng, routeEnd.lat,
+      controller.signal
+    ).then(latLngs => {
+      clearTimeout(timeoutId);
+      if (!isMounted || !map || !map.getContainer()) return;
 
-        const latLngs = coords.map(([lng, lat]) => [lat, lng]);
-        polylineRef.current = L.polyline(latLngs, {
-          color: isDriver && ['accepted', 'arrived'].includes(ride.status) ? '#2563eb' : '#16a34a',
-          weight: 6,
-          opacity: 0.9,
-          lineJoin: 'round',
-          lineCap: 'round',
-        }).addTo(map);
+      polylineRef.current = L.polyline(latLngs, {
+        color: isDriver && ['accepted', 'arrived'].includes(ride.status) ? '#2563eb' : '#16a34a',
+        weight: 6,
+        opacity: 0.9,
+        lineJoin: 'round',
+        lineCap: 'round',
+      }).addTo(map);
 
-        const fitKey = `${view}-${ride.requestId}-${ride.status}`;
-        if (lastFitKeyRef.current !== fitKey) {
-          lastFitKeyRef.current = fitKey;
-          map.fitBounds(polylineRef.current.getBounds(), { padding: [70, 70] });
-        }
-      })
-      .catch(() => {});
+      const fitKey = `${view}-${ride.requestId}-${ride.status}`;
+      if (lastFitKeyRef.current !== fitKey) {
+        lastFitKeyRef.current = fitKey;
+        map.fitBounds(polylineRef.current.getBounds(), { padding: [70, 70] });
+      }
+    }).catch(() => { clearTimeout(timeoutId); });
 
     return () => {
       isMounted = false;
+      controller.abort();
+      clearTimeout(timeoutId);
       if (polylineRef.current) {
         polylineRef.current.remove();
         polylineRef.current = null;

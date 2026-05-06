@@ -18,6 +18,8 @@ const fuelRoutes = require('./routes/fuel');
 const complaintsRoutes = require('./routes/complaints');
 const profileRoutes = require('./routes/profile');
 const supportRoutes = require('./routes/support');
+const fareRoutes = require('./routes/fare');
+const ratingsRoutes = require('./routes/ratings');
 
 const app = express();
 const MySQLStore = MySQLStoreFactory(session);
@@ -141,6 +143,8 @@ app.use('/api/fuel', fuelRoutes);
 app.use('/api/complaints', complaintsRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/fare', fareRoutes);
+app.use('/api/ratings', ratingsRoutes);
 
 // Geocode proxy — keeps the Geoapify key server-side and avoids browser CORS/401
 const GEOAPIFY_KEY = process.env.GEOAPIFY_KEY || '';

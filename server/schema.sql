@@ -11,6 +11,8 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS complaints;
 DROP TABLE IF EXISTS franchises;
 DROP TABLE IF EXISTS tricycles;
+DROP TABLE IF EXISTS ride_ratings;
+DROP TABLE IF EXISTS fare_settings;
 DROP TABLE IF EXISTS ride_requests;
 DROP TABLE IF EXISTS sos_alerts;
 DROP TABLE IF EXISTS drivers;
@@ -745,3 +747,42 @@ BEGIN
 END$$
 
 DELIMITER ;
+
+-- =================================================================
+-- Fare & Ratings
+-- =================================================================
+
+CREATE TABLE fare_settings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  base_fare DECIMAL(10, 2) NOT NULL DEFAULT 20.00,
+  base_distance_km DECIMAL(6, 2) NOT NULL DEFAULT 3.00,
+  per_km_rate DECIMAL(10, 2) NOT NULL DEFAULT 0.50,
+  effective_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  set_by_admin_id INT DEFAULT NULL,
+  CONSTRAINT fk_fare_admin
+    FOREIGN KEY (set_by_admin_id) REFERENCES users(user_id)
+    ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Insert initial seed fare data
+INSERT INTO fare_settings (base_fare, base_distance_km, per_km_rate) VALUES (20.00, 3.00, 0.50);
+
+CREATE TABLE ride_ratings (
+  rating_id INT AUTO_INCREMENT PRIMARY KEY,
+  request_id INT NOT NULL UNIQUE,
+  driver_id INT NOT NULL,
+  commuter_id INT NOT NULL,
+  rating_value INT NOT NULL CHECK (rating_value >= 1 AND rating_value <= 5),
+  feedback TEXT DEFAULT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_rating_request
+    FOREIGN KEY (request_id) REFERENCES ride_requests(request_id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_rating_driver
+    FOREIGN KEY (driver_id) REFERENCES drivers(driver_id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_rating_commuter
+    FOREIGN KEY (commuter_id) REFERENCES users(user_id)
+    ON DELETE CASCADE,
+  KEY idx_rating_driver (driver_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

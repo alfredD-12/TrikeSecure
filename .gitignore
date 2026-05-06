@@ -5,3 +5,4 @@ dist/
 
 .codex-tmp-ssh/
 .idea/
+tmp_ssh/

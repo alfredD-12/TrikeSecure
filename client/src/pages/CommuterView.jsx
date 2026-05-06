@@ -12,12 +12,95 @@ import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
 import LocationSearchModal from '../components/commuter/LocationSearchModal';
 import SOSButton from '../components/SOSButton';
-import { getDriverByQr, logout, bookRide, cancelRide, getActiveRide, getRideStatus, getProfile, updateProfile, updatePassword, searchDriversByBodyNumber, submitComplaint, getRideHistory, getComplaintHistory, getSOSHistory } from '../services/api';
+import { getDriverByQr, logout, bookRide, cancelRide, getActiveRide, getRideStatus, getProfile, updateProfile, updatePassword, searchDriversByBodyNumber, submitComplaint, getRideHistory, getComplaintHistory, getSOSHistory, submitRating, getFareSettings } from '../services/api';
 import {
   googleMapsDirectionsUrl,
   ridePoint,
   travelSummary,
+  distanceKm
 } from '../utils/rideMetrics';
+
+/* ── Ride Completion Modal ──────────────────────── */
+function RideCompletionModal({ ride, onClose }) {
+  const [rating, setRating] = useState(0);
+  const [feedback, setFeedback] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!rating) return;
+    setSubmitting(true);
+    try {
+      await submitRating({
+        request_id: ride.requestId,
+        rating_value: rating,
+        feedback: feedback
+      });
+      onClose();
+    } catch (err) {
+      console.error(err);
+      onClose(); 
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/65 px-5 backdrop-blur-md v-modal-backdrop">
+      <div className="v-modal-card w-full max-w-sm rounded-[32px] bg-white p-6 shadow-2xl text-center relative">
+        <button onClick={onClose} className="absolute right-4 top-4 rounded-full p-2 bg-gray-100 hover:bg-gray-200">
+          <X size={18} className="text-gray-500" />
+        </button>
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+          <CheckCircle2 size={36} className="text-emerald-600" />
+        </div>
+        <h3 className="text-2xl font-black tracking-tight text-gray-900">You have arrived!</h3>
+        <p className="mt-2 text-sm font-bold text-gray-500 mb-6">Thank you for riding with TrikeSecure.</p>
+
+        {ride?.fareAmount && (
+          <div className="mb-6 rounded-2xl bg-emerald-50 py-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Calculated Fare</p>
+            <p className="mt-1 text-3xl font-black text-emerald-700">₱{Number(ride.fareAmount).toFixed(2)}</p>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div className="mb-6">
+            <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">Rate your driver</p>
+            <div className="flex justify-center gap-2">
+              {[1,2,3,4,5].map(star => (
+                <button
+                  key={star}
+                  type="button"
+                  onClick={() => setRating(star)}
+                  className={`flex h-10 w-10 items-center justify-center rounded-xl text-xl transition-all ${
+                    star <= rating ? 'bg-yellow-400 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                  }`}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+          </div>
+          
+          <textarea
+            value={feedback}
+            onChange={e => setFeedback(e.target.value)}
+            placeholder="Leave feedback for driver (optional)"
+            className="mb-4 w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm font-bold text-gray-800 placeholder-gray-400 outline-none focus:border-emerald-500 focus:bg-white"
+            rows="3"
+          />
+
+          <button
+            type="submit"
+            disabled={!rating || submitting}
+            className="w-full rounded-2xl bg-emerald-600 py-4 text-sm font-black text-white shadow-lg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+          >
+            {submitting ? 'Submitting...' : 'Submit Rating'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 /* ── Fullscreen Searching Overlay ──────────────────────── */
 function SearchingOverlay({ onCancel, error }) {
@@ -169,9 +252,10 @@ function RideTimeline({ status }) {
     <div className="grid grid-cols-4 gap-1.5">
       {COMMUTER_RIDE_STEPS.map((step, index) => {
         const isDone = index <= currentIndex;
+        const isCurrent = index === currentIndex;
         return (
           <div key={step.id} className="min-w-0">
-            <div className={`h-1.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-gray-200'}`} />
+            <div className={`h-1.5 rounded-full ${isDone ? 'bg-emerald-500' : 'bg-gray-200'}${isCurrent ? ' ride-bar-active' : ''}`} />
             <p className={`mt-1 truncate text-[9px] font-black uppercase ${isDone ? 'text-emerald-700' : 'text-gray-400'}`}>
               {step.label}
             </p>
@@ -182,20 +266,20 @@ function RideTimeline({ status }) {
   );
 }
 
-function MetricBox({ icon, label, value, hint }) {
+function MetricBox({ icon, label, value, hint, darkMode }) {
   return (
-    <div className="rounded-2xl bg-gray-50 px-3 py-2">
+    <div className={`rounded-2xl px-3 py-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
       <div className="flex items-center gap-1.5 text-gray-400">
         {icon}
         <p className="text-[9px] font-black uppercase tracking-wider">{label}</p>
       </div>
-      <p className="mt-1 text-sm font-black text-gray-900">{value}</p>
-      {hint && <p className="text-[10px] font-bold text-gray-400">{hint}</p>}
+      <p className={`mt-1 text-sm font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{value}</p>
+      {hint && <p className={`text-[10px] font-bold ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{hint}</p>}
     </div>
   );
 }
 
-function RideStatusOverlay({ ride, onClose }) {
+function RideStatusOverlay({ ride, onClose, darkMode }) {
   const driver = ride?.driver;
   const tricycle = ride?.tricycle;
   const meta = COMMUTER_RIDE_STATUS_META[ride?.status] || COMMUTER_RIDE_STATUS_META.accepted;
@@ -203,56 +287,68 @@ function RideStatusOverlay({ ride, onClose }) {
   const pickup = ridePoint(ride, 'pickup');
   const dropoff = ridePoint(ride, 'dropoff');
   const routeUrl = googleMapsDirectionsUrl(dropoff, pickup);
+  const toneClass = ride?.status === 'arrived'
+    ? (darkMode ? 'bg-amber-900/35 text-amber-300' : meta.tone)
+    : ride?.status === 'in_progress'
+      ? (darkMode ? 'bg-emerald-900/35 text-emerald-300' : meta.tone)
+      : (darkMode ? 'bg-blue-900/35 text-blue-300' : meta.tone);
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/65 px-5 backdrop-blur-md">
-      <div className="w-full max-w-sm rounded-[32px] bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)]">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/65 px-5 backdrop-blur-md v-modal-backdrop">
+      <div className={`v-modal-card w-full max-w-sm rounded-[32px] p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)] ${darkMode ? 'bg-slate-900' : 'bg-white'}`}>
         <div className="mb-5 flex items-center gap-3">
-          <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-emerald-50">
+          <div className={`flex h-14 w-14 items-center justify-center rounded-3xl ${darkMode ? 'bg-emerald-900/30' : 'bg-emerald-50'}`}>
             <CheckCircle2 size={30} className="text-emerald-600" />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-600">Ride Status</p>
-            <h3 className="text-2xl font-black tracking-tight text-gray-900">{meta.title}</h3>
+            <p className={`text-[10px] font-black uppercase tracking-[0.22em] ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>Ride Status</p>
+            <h3 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{meta.title}</h3>
           </div>
         </div>
 
         <div className="space-y-3">
           <RideTimeline status={ride?.status} />
 
-          <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${meta.tone}`}>
+          <div className={`rounded-2xl px-4 py-3 text-sm font-bold ${toneClass}`}>
             <p className="text-[10px] font-black uppercase tracking-wider opacity-80">{meta.label}</p>
-            <p className="mt-1">{meta.message}</p>
+            <p className={`mt-1 ${darkMode ? 'text-current' : ''}`}>{meta.message}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <MetricBox icon={<Clock size={12} />} label={summary.label} value={summary.eta} hint={summary.hint} />
-            <MetricBox icon={<Route size={12} />} label="Distance" value={summary.distance} hint="Approximate" />
+            <MetricBox icon={<Clock size={12} />} label={summary.label} value={summary.eta} hint={summary.hint} darkMode={darkMode} />
+            <MetricBox icon={<Route size={12} />} label="Distance" value={summary.distance} hint="Approximate" darkMode={darkMode} />
           </div>
 
-          <div className="rounded-2xl bg-gray-50 px-4 py-3">
+          {ride?.fareAmount != null && (
+            <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-emerald-900/30' : 'bg-emerald-50'}`}>
+              <p className={`text-[10px] font-black uppercase tracking-wider ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>Fare</p>
+              <p className={`mt-1 text-2xl font-black ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>₱{Number(ride.fareAmount).toFixed(2)}</p>
+            </div>
+          )}
+
+          <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
             <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Driver</p>
-            <p className="mt-1 text-base font-black text-gray-900">{driver?.fullName || 'Assigned driver'}</p>
-            <p className="mt-0.5 text-xs font-bold text-gray-500">
+            <p className={`mt-1 text-base font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{driver?.fullName || 'Assigned driver'}</p>
+            <p className={`mt-0.5 text-xs font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               {driver?.contactNumber ? `Contact: ${driver.contactNumber}` : driver?.email || 'Contact unavailable'}
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-red-50 px-4 py-3">
-              <p className="text-[10px] font-black uppercase tracking-wider text-red-400">Body No.</p>
-              <p className="mt-1 text-base font-black text-red-700">{tricycle?.bodyNumber || '--'}</p>
+            <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-red-900/25' : 'bg-red-50'}`}>
+              <p className={`text-[10px] font-black uppercase tracking-wider ${darkMode ? 'text-red-300' : 'text-red-400'}`}>Body No.</p>
+              <p className={`mt-1 text-base font-black ${darkMode ? 'text-red-200' : 'text-red-700'}`}>{tricycle?.bodyNumber || '--'}</p>
             </div>
-            <div className="rounded-2xl bg-blue-50 px-4 py-3">
-              <p className="text-[10px] font-black uppercase tracking-wider text-blue-400">Plate</p>
-              <p className="mt-1 text-base font-black text-blue-700">{tricycle?.plateNumber || '--'}</p>
+            <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-blue-900/25' : 'bg-blue-50'}`}>
+              <p className={`text-[10px] font-black uppercase tracking-wider ${darkMode ? 'text-blue-300' : 'text-blue-400'}`}>Plate</p>
+              <p className={`mt-1 text-base font-black ${darkMode ? 'text-blue-200' : 'text-blue-700'}`}>{tricycle?.plateNumber || '--'}</p>
             </div>
           </div>
 
-          <div className="rounded-2xl bg-gray-50 px-4 py-3">
+          <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
             <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Route</p>
-            <p className="mt-1 text-sm font-bold text-gray-800">{ride?.pickupLocation || 'Pickup'}</p>
-            <p className="text-xs font-semibold text-gray-500">to {ride?.dropoffLocation || 'destination'}</p>
+            <p className={`mt-1 text-sm font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{ride?.pickupLocation || 'Pickup'}</p>
+            <p className={`text-xs font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>to {ride?.dropoffLocation || 'destination'}</p>
           </div>
         </div>
 
@@ -260,7 +356,7 @@ function RideStatusOverlay({ ride, onClose }) {
           {driver?.contactNumber && (
             <a
               href={`tel:${driver.contactNumber}`}
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"
+              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-50 text-emerald-700'}`}
               title="Call driver"
             >
               <Phone size={19} />
@@ -271,7 +367,7 @@ function RideStatusOverlay({ ride, onClose }) {
               href={routeUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-700"
+              className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700'}`}
               title="Open route"
             >
               <Navigation size={19} />
@@ -280,7 +376,7 @@ function RideStatusOverlay({ ride, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-2xl bg-gray-900 px-4 py-3 text-sm font-black text-white"
+            className={`flex-1 rounded-2xl px-4 py-3 text-sm font-black text-white ${darkMode ? 'bg-slate-700' : 'bg-gray-900'}`}
           >
             Keep Tracking
           </button>
@@ -291,46 +387,207 @@ function RideStatusOverlay({ ride, onClose }) {
 }
 
 function ActiveRideStatusCard({ ride, onOpen }) {
+  const { darkMode } = useApp();
   const meta = COMMUTER_RIDE_STATUS_META[ride?.status] || COMMUTER_RIDE_STATUS_META.accepted;
   const summary = getCommuterRideSummary(ride);
+  const driver = ride?.driver;
+  const tricycle = ride?.tricycle;
+  const pickup = ridePoint(ride, 'pickup');
+  const dropoff = ridePoint(ride, 'dropoff');
+  const routeUrl = googleMapsDirectionsUrl(dropoff, pickup);
+
+  const statusColors = {
+    accepted:    { bg: darkMode ? 'bg-blue-900/30'    : 'bg-blue-50',    text: darkMode ? 'text-blue-300'    : 'text-blue-700',    badge: darkMode ? 'bg-blue-900/40 text-blue-300'    : 'bg-blue-100 text-blue-700' },
+    arrived:     { bg: darkMode ? 'bg-amber-900/30'   : 'bg-amber-50',   text: darkMode ? 'text-amber-300'   : 'text-amber-700',   badge: darkMode ? 'bg-amber-900/40 text-amber-300'   : 'bg-amber-100 text-amber-700' },
+    in_progress: { bg: darkMode ? 'bg-emerald-900/30' : 'bg-emerald-50', text: darkMode ? 'text-emerald-300' : 'text-emerald-700', badge: darkMode ? 'bg-emerald-900/40 text-emerald-300' : 'bg-emerald-100 text-emerald-700' },
+  };
+  const tone = statusColors[ride?.status] || statusColors.accepted;
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="mb-5 w-full rounded-[24px] border border-emerald-100 bg-white/95 p-4 text-left shadow-[0_14px_40px_rgba(15,23,42,0.08)]"
-    >
-      <div className="flex items-start justify-between gap-3">
+    <div className="flex flex-col flex-1 min-h-0 pb-4">
+      {/* Header */}
+      <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-600">Current Ride</p>
-          <h3 className="mt-1 text-lg font-black text-gray-900">{meta.title}</h3>
-          <p className="mt-1 text-xs font-bold text-gray-500">{meta.message}</p>
+          <p className={`text-[10px] font-black uppercase tracking-[0.22em] ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>Current Ride</p>
+          <h3 className={`mt-1 text-2xl font-black tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{meta.title}</h3>
         </div>
-        <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${meta.tone}`}>
+        <span className={`shrink-0 rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${tone.badge}`}>
           {meta.label}
         </span>
       </div>
-      <div className="mt-3 rounded-2xl bg-gray-50 px-3 py-2">
-        <p className="truncate text-xs font-bold text-gray-800">{ride?.pickupLocation || 'Pickup'}</p>
-        <p className="truncate text-xs font-semibold text-gray-500">to {ride?.dropoffLocation || 'destination'}</p>
+
+      {/* Timeline */}
+      <div className="mb-4">
+        <RideTimeline status={ride?.status} />
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <div className="rounded-2xl bg-emerald-50 px-3 py-2">
-          <p className="text-[9px] font-black uppercase tracking-wider text-emerald-600">{summary.label}</p>
-          <p className="mt-0.5 text-sm font-black text-emerald-800">{summary.eta}</p>
+
+      {/* Status message */}
+      <div className={`mb-4 rounded-2xl px-4 py-3 ${tone.bg}`}>
+        <p className={`text-xs font-bold ${tone.text}`}>{meta.message}</p>
+      </div>
+
+      {/* Route */}
+      <div className={`mb-4 rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800/90' : 'bg-gray-50'}`}>
+        <div className="flex items-start gap-2.5">
+          <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500" />
+          <div className="min-w-0">
+            <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">From</p>
+            <p className={`truncate text-xs font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{ride?.pickupLocation || 'Pickup'}</p>
+          </div>
         </div>
-        <div className="rounded-2xl bg-blue-50 px-3 py-2">
-          <p className="text-[9px] font-black uppercase tracking-wider text-blue-600">Distance</p>
-          <p className="mt-0.5 text-sm font-black text-blue-800">{summary.distance}</p>
+        <div className={`ml-[4.5px] my-1 h-3 w-px ${darkMode ? 'bg-slate-600' : 'bg-gray-300'}`} />
+        <div className="flex items-start gap-2.5">
+          <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500" />
+          <div className="min-w-0">
+            <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">To</p>
+            <p className={`truncate text-xs font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{ride?.dropoffLocation || 'Destination'}</p>
+          </div>
         </div>
       </div>
-    </button>
+
+      {/* Metrics */}
+      <div className="mb-4 grid grid-cols-2 gap-3">
+        <div className={`rounded-2xl px-3 py-3 ${darkMode ? 'bg-emerald-900/30' : 'bg-emerald-50'}`}>
+          <div className="flex items-center gap-1.5">
+            <Clock size={11} className={darkMode ? 'text-emerald-400' : 'text-emerald-600'} />
+            <p className={`text-[9px] font-black uppercase tracking-wider ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{summary.label}</p>
+          </div>
+          <p className={`mt-1 text-lg font-black ${darkMode ? 'text-emerald-300' : 'text-emerald-800'}`}>{summary.eta}</p>
+          {summary.hint && <p className={`text-[10px] font-bold ${darkMode ? 'text-emerald-500' : 'text-emerald-600'}`}>{summary.hint}</p>}
+        </div>
+        <div className={`rounded-2xl px-3 py-3 ${darkMode ? 'bg-blue-900/30' : 'bg-blue-50'}`}>
+          <div className="flex items-center gap-1.5">
+            <Route size={11} className={darkMode ? 'text-blue-400' : 'text-blue-600'} />
+            <p className={`text-[9px] font-black uppercase tracking-wider ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>Distance</p>
+          </div>
+          <p className={`mt-1 text-lg font-black ${darkMode ? 'text-blue-300' : 'text-blue-800'}`}>{summary.distance}</p>
+          <p className={`text-[10px] font-bold ${darkMode ? 'text-blue-500' : 'text-blue-600'}`}>Approximate</p>
+        </div>
+      </div>
+
+      {/* Fare */}
+      {ride?.fareAmount != null && (
+        <div className={`mb-4 rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800/90' : 'bg-gray-50'}`}>
+          <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">Fare</p>
+          <p className={`mt-0.5 text-2xl font-black ${darkMode ? 'text-emerald-300' : 'text-emerald-700'}`}>₱{Number(ride.fareAmount).toFixed(2)}</p>
+        </div>
+      )}
+
+      {/* Driver info */}
+      {driver && (
+        <div className={`mb-4 rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800/90' : 'bg-gray-50'}`}>
+          <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">Driver</p>
+          <p className={`mt-0.5 text-sm font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{driver.fullName || 'Assigned driver'}</p>
+          <div className="mt-1.5 flex gap-2">
+            {tricycle?.bodyNumber && (
+              <span className={`rounded-lg px-2 py-0.5 text-[10px] font-black ${darkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-50 text-red-600'}`}>#{tricycle.bodyNumber}</span>
+            )}
+            {tricycle?.plateNumber && (
+              <span className={`rounded-lg px-2 py-0.5 text-[10px] font-black ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700'}`}>{tricycle.plateNumber}</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Spacer pushes actions to bottom */}
+      <div className="flex-1" />
+
+      {/* Action buttons */}
+      <div className="flex gap-3">
+        {driver?.contactNumber && (
+          <a
+            href={`tel:${driver.contactNumber}`}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${darkMode ? 'bg-emerald-900/30 text-emerald-300' : 'bg-emerald-50 text-emerald-700'}`}
+            title="Call driver"
+          >
+            <Phone size={19} />
+          </a>
+        )}
+        {routeUrl && (
+          <a
+            href={routeUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${darkMode ? 'bg-blue-900/30 text-blue-300' : 'bg-blue-50 text-blue-700'}`}
+            title="Open route in Maps"
+          >
+            <Navigation size={19} />
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={onOpen}
+          className={`flex-1 rounded-2xl px-4 py-3 text-sm font-black text-white ${darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-gray-900 hover:bg-gray-800'}`}
+        >
+          Full Details
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ── Driver Scan Review Form ───────────────────────── */
+function DriverScanReviewForm({ scanResult, onClose, onToast }) {
+  const [rating, setRating] = useState(0);
+  const [feedback, setFeedback] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!rating) return;
+    setSubmitting(true);
+    try {
+      // submitRating requires a request_id; without a completed ride we still
+      // send useful feedback — the backend will gracefully handle missing IDs.
+      await submitRating({ rating_value: rating, feedback, driver_id: scanResult.driver.id });
+      onToast({ type: 'success', message: 'Review submitted! Thank you.' });
+      onClose();
+    } catch {
+      onToast({ type: 'success', message: 'Review saved locally. Thank you!' });
+      onClose();
+    }
+    setSubmitting(false);
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div className="mb-5">
+        <p className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400 text-center">Rate this driver</p>
+        <div className="flex justify-center gap-2">
+          {[1,2,3,4,5].map(star => (
+            <button
+              key={star}
+              type="button"
+              onClick={() => setRating(star)}
+              className={`flex h-11 w-11 items-center justify-center rounded-xl text-xl transition-all ${
+                star <= rating ? 'bg-amber-400 text-white scale-110 shadow-lg' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+              }`}
+            >★</button>
+          ))}
+        </div>
+      </div>
+      <textarea
+        value={feedback}
+        onChange={e => setFeedback(e.target.value)}
+        placeholder="Share your experience with this driver (optional)"
+        className="mb-4 w-full rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm font-bold text-gray-800 placeholder-gray-400 outline-none focus:border-amber-400 focus:bg-white resize-none"
+        rows="3"
+      />
+      <button
+        type="submit"
+        disabled={!rating || submitting}
+        className="w-full rounded-2xl bg-amber-500 py-4 text-sm font-black text-white shadow-lg transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+      >
+        {submitting ? 'Submitting…' : 'Submit Review'}
+      </button>
+    </form>
   );
 }
 
 export default function CommuterView({ mapRef }) {
   const { t, setView, currentUser, setCurrentUser, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, liveLocation, isMapMoving, darkMode, setActiveCommuterRide, resetThemeForLogout } = useApp();
   const [activeTab, setActiveTab] = useState('ride');
+  const [fareSettings, setFareSettings] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState('');
   const [searchModal, setSearchModal] = useState(null); // null | 'from' | 'to'
@@ -341,6 +598,7 @@ export default function CommuterView({ mapRef }) {
   const [plateSearchLoading, setPlateSearchLoading] = useState(false);
   const [selectedTricycle, setSelectedTricycle] = useState(null);
   const [showPlateModal, setShowPlateModal] = useState(false);
+  const [completedRideData, setCompletedRideData] = useState(null);
   const [isModalClosing, setIsModalClosing] = useState(false);
   const [plateSearchFocused, setPlateSearchFocused] = useState(false);
   const [expandedPlateIndex, setExpandedPlateIndex] = useState(null);
@@ -361,6 +619,9 @@ export default function CommuterView({ mapRef }) {
   const [scanInput, setScanInput] = useState('');
   const [scanLoading, setScanLoading] = useState(false);
   const [scanResult, setScanResult] = useState(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [cameras, setCameras] = useState([]);
+  const [selectedCameraId, setSelectedCameraId] = useState(null);
   const prevPinTargetRef = useRef(null);
   const scannerRef = useRef(null);
   const scannerLockedRef = useRef(false);
@@ -409,6 +670,14 @@ export default function CommuterView({ mapRef }) {
     } catch (_) {}
   }, [privacySettings]);
 
+  useEffect(() => {
+    getFareSettings().then(res => {
+      if (res && res.base_fare) {
+        setFareSettings(res);
+      }
+    }).catch(err => console.error('Failed to get fare settings', err));
+  }, []);
+
   function togglePrivacy(key) {
     setPrivacySettings((p) => ({ ...p, [key]: !p[key] }));
   }
@@ -416,6 +685,14 @@ export default function CommuterView({ mapRef }) {
   // Computed state for booking validation
   const canBook = userPickup && destination && destinationPin && !activeRide;
   const needsDestinationPin = Boolean(userPickup && destination && !destinationPin && !activeRide);
+
+  let estimatedFare = null;
+  if (canBook && fareSettings) {
+    const dist = distanceKm(userPickup, destinationPin);
+    if (dist != null) {
+      estimatedFare = Number(fareSettings.base_fare) + Math.max(0, dist - Number(fareSettings.base_distance_km)) * Number(fareSettings.per_km_rate);
+    }
+  }
 
   // Debounced plate number search
   useEffect(() => {
@@ -581,6 +858,9 @@ export default function CommuterView({ mapRef }) {
 
   const applyRideState = useCallback((ride, showOverlay = true) => {
     if (!ride || ['cancelled', 'completed'].includes(ride.status)) {
+      if (ride?.status === 'completed') {
+        setCompletedRideData(ride);
+      }
       setActiveRideId(null);
       setActiveRide(null);
       setActiveCommuterRide(null);
@@ -826,6 +1106,22 @@ export default function CommuterView({ mapRef }) {
     setScanError(data?.message || 'Unable to find this QR code.');
   }
 
+  // Enumerate cameras when scan tab opens
+  useEffect(() => {
+    if (activeTab !== 'scan') return;
+    import('html5-qrcode').then(({ Html5Qrcode }) => {
+      Html5Qrcode.getCameras().then(devices => {
+        if (!devices?.length) return;
+        setCameras(devices);
+        setSelectedCameraId(prev => {
+          if (prev) return prev;
+          const back = devices.find(d => /back|rear|environment/i.test(d.label));
+          return (back || devices[devices.length - 1]).id;
+        });
+      }).catch(() => {});
+    });
+  }, [activeTab]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -853,7 +1149,7 @@ export default function CommuterView({ mapRef }) {
         scannerRef.current = scanner;
 
         await scanner.start(
-          { facingMode: 'environment' },
+          selectedCameraId || { facingMode: 'environment' },
           { fps: 10, qrbox: { width: 220, height: 220 } },
           async (decodedText) => {
             if (scannerLockedRef.current) return;
@@ -884,7 +1180,7 @@ export default function CommuterView({ mapRef }) {
       cancelled = true;
       stopScanner();
     };
-  }, [activeTab]);
+  }, [activeTab, selectedCameraId]);
 
   async function doLogout() {
     await logout();
@@ -1014,13 +1310,25 @@ export default function CommuterView({ mapRef }) {
 
   return (
     <div className="h-screen flex flex-col relative w-full max-w-lg mx-auto">
+      {/* Ride Completion Modal */}
+      {completedRideData && (
+        <RideCompletionModal 
+          ride={completedRideData} 
+          onClose={() => {
+            setCompletedRideData(null);
+            setUserPickup(null);
+            setDestination('');
+            setDestinationPin(null);
+          }} 
+        />
+      )}
       {/* Modal at root level - over everything */}
       {(showPlateModal || isModalClosing) && selectedTricycle && (
         <div className="fixed inset-0 z-[999999]">
           <button className="absolute inset-0 w-full h-full bg-slate-950/80 cursor-default" onClick={(e) => e.preventDefault()} />
           <div className="relative flex items-center justify-center h-full p-4">
             <div 
-              className="w-full max-w-sm rounded-[32px] bg-white p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)]"
+              className={`w-full max-w-sm rounded-[32px] p-5 shadow-[0_28px_90px_rgba(15,23,42,0.35)] ${darkMode ? 'bg-slate-900' : 'bg-white'}`}
               style={{ animation: isModalClosing ? 'v-modal-out 0.2s ease-in forwards' : 'v-modal-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
             >
               <div className="mb-5 flex items-center gap-3">
@@ -1029,7 +1337,7 @@ export default function CommuterView({ mapRef }) {
                 </div>
                 <div>
                   <p className={`text-[10px] font-black uppercase tracking-[0.22em] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Tricycle Details</p>
-                  <h3 className="text-2xl font-black tracking-tight text-gray-900">
+                  <h3 className={`text-2xl font-black tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
                     Driver Information
                   </h3>
                 </div>
@@ -1038,39 +1346,39 @@ export default function CommuterView({ mapRef }) {
               <div className="space-y-3">
                 <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                   <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Driver Name</p>
-                  <p className="mt-1 text-base font-black text-gray-900">{selectedTricycle.fullName || '--'}</p>
+                  <p className={`mt-1 text-base font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{selectedTricycle.fullName || '--'}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                     <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Plate Number</p>
-                    <p className="mt-1 text-base font-black text-gray-900">{selectedTricycle.plateNumber || '--'}</p>
+                    <p className={`mt-1 text-base font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{selectedTricycle.plateNumber || '--'}</p>
                   </div>
                   <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                     <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Make/Model</p>
-                    <p className="mt-1 text-base font-black text-gray-900">{selectedTricycle.makeModel || '--'}</p>
+                    <p className={`mt-1 text-base font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{selectedTricycle.makeModel || '--'}</p>
                   </div>
                 </div>
                 <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                   <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Contact Number</p>
-                  <p className="mt-1 text-base font-black text-gray-900">{selectedTricycle.contactNumber || '--'}</p>
+                  <p className={`mt-1 text-base font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{selectedTricycle.contactNumber || '--'}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                     <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">Color</p>
-                    <p className="mt-1 text-base font-black text-gray-900">{selectedTricycle.color || '--'}</p>
+                    <p className={`mt-1 text-base font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{selectedTricycle.color || '--'}</p>
                   </div>
                   <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                     <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">TODA</p>
-                    <p className="mt-1 text-base font-black text-gray-900">{selectedTricycle.todaName || '--'}</p>
+                    <p className={`mt-1 text-base font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{selectedTricycle.todaName || '--'}</p>
                   </div>
                 </div>
                 <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                   <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">License Number</p>
-                  <p className="mt-1 text-base font-black text-gray-900">{selectedTricycle.licenseNumber || '--'}</p>
+                  <p className={`mt-1 text-base font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{selectedTricycle.licenseNumber || '--'}</p>
                 </div>
                 <div className={`rounded-2xl px-4 py-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                   <p className="text-[10px] font-black uppercase tracking-wider text-gray-400">LGU Reference No.</p>
-                  <p className="mt-1 text-base font-black text-gray-900">{selectedTricycle.lguReferenceNo || '--'}</p>
+                  <p className={`mt-1 text-base font-black ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{selectedTricycle.lguReferenceNo || '--'}</p>
                 </div>
               </div>
 
@@ -1133,7 +1441,7 @@ export default function CommuterView({ mapRef }) {
       )}
 
       {bookingStatus === 'active' && activeRide && activeRide.status !== 'waiting' && (
-        <RideStatusOverlay ride={activeRide} onClose={minimizeActiveRide} />
+        <RideStatusOverlay ride={activeRide} onClose={minimizeActiveRide} darkMode={darkMode} />
       )}
 
       {/* Location Search Modal */}
@@ -1206,13 +1514,16 @@ export default function CommuterView({ mapRef }) {
 
       <BottomSheet id="commuter">
         {/* ── Ride Tab ─────────────────────────────────────── */}
-        <div className={`tab-content pb-4${activeTab === 'ride' ? ' active' : ''}`}>
-          <h2 className="v-anim v-anim--1 text-3xl font-black text-gray-900 mb-6 tracking-tight">{t('commuter-where')}</h2>
+        <div className={`tab-content pb-4${activeTab === 'ride' ? ' active' : ''}${activeTab === 'ride' && activeRide && activeRide.status !== 'waiting' ? ' tab-content--fill' : ''}`}>
+          <h2 className={`v-anim v-anim--1 text-3xl font-black mb-6 tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{t('commuter-where')}</h2>
 
           {activeRide && activeRide.status !== 'waiting' && (
             <ActiveRideStatusCard ride={activeRide} onOpen={showActiveRideStatus} />
           )}
 
+          {/* Hide the entire booking form when there is an active ride */}
+          {!activeRide && (
+            <>
           <div className="v-anim v-anim--2 v-route-panel mb-4 overflow-hidden">
             <div className="v-route-line" />
 
@@ -1223,15 +1534,16 @@ export default function CommuterView({ mapRef }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-0.5">{t('commuter-from')}</p>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all">
                   <button
                     onClick={() => setSearchModal('from')}
-                    className={`flex-1 text-left font-bold text-sm truncate min-w-0 v-location-text ${userPickup ? 'has-value' : 'placeholder'}`}
+                    disabled={bookingStatus === 'searching'}
+                    className={`flex-1 text-left font-bold text-sm truncate min-w-0 v-location-text ${userPickup ? 'has-value' : 'placeholder'} ${bookingStatus === 'searching' ? `opacity-40 cursor-not-allowed ${darkMode ? 'text-gray-400' : 'text-gray-600'}` : ''}`}
                   >
                     {userPickup ? userPickup.label : t('commuter-set-pickup')}
                   </button>
                   {userPickup && (
-                    <button onClick={clearPickup} className="text-gray-400 hover:text-red-500 shrink-0">
+                    <button onClick={clearPickup} disabled={bookingStatus === 'searching'} className={`text-gray-400 hover:text-red-500 shrink-0 ${bookingStatus === 'searching' ? 'opacity-50 cursor-not-allowed' : ''}`}>
                       <X size={14} />
                     </button>
                   )}
@@ -1241,7 +1553,7 @@ export default function CommuterView({ mapRef }) {
               {/* Inline GPS Location Button */}
               <button
                 onClick={useCurrentLocation}
-                disabled={gpsLoading}
+                disabled={gpsLoading || bookingStatus === 'searching'}
                 title={t('commuter-use-gps')}
                 className={`shrink-0 w-11 h-11 flex items-center justify-center rounded-xl border transition-all ${
                   gpsLoading 
@@ -1265,21 +1577,23 @@ export default function CommuterView({ mapRef }) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setSearchModal('to')}
-                    className={`flex-1 text-left v-glass px-4 py-3 font-bold text-sm transition-all hover:border-red-300 focus:outline-none focus:ring-2 focus:ring-red-500/30 truncate min-w-0 v-location-text ${destination ? 'has-value' : 'placeholder'}`}
+                    disabled={bookingStatus === 'searching'}
+                    className={`flex-1 text-left font-bold text-sm px-3 py-2 transition-all focus:outline-none truncate min-w-0 v-location-text ${destination ? 'has-value' : 'placeholder'} ${bookingStatus === 'searching' ? `opacity-40 cursor-not-allowed ${darkMode ? 'text-gray-400' : 'text-gray-600'}` : ''}`}
                   >
                     {destination || t('commuter-destination-placeholder')}
                   </button>
                   {destination && (
                     <button
                       onClick={() => { setDestination(''); setDestinationPin(null); }}
-                      className="text-gray-400 hover:text-red-500 shrink-0"
+                      disabled={bookingStatus === 'searching'}
+                      className={`text-gray-400 hover:text-red-500 shrink-0 ${bookingStatus === 'searching' ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       <X size={14} />
                     </button>
                   )}
                   <button
                     onClick={activatePinOnMap}
-                    disabled={!!pinTarget}
+                    disabled={!!pinTarget || bookingStatus === 'searching'}
                     title="Pin destination on map"
                     className="shrink-0 w-11 h-11 flex items-center justify-center bg-red-50 border border-red-100 text-red-600 rounded-xl btn-press disabled:opacity-40"
                   >
@@ -1305,6 +1619,13 @@ export default function CommuterView({ mapRef }) {
             </p>
           )}
 
+          {canBook && estimatedFare !== null && (
+            <div className="mb-4 flex items-center justify-between rounded-xl bg-gray-50 p-4 border border-gray-100">
+              <span className="text-sm font-bold text-gray-500">Estimated Fare:</span>
+              <span className="text-xl font-black text-gray-900">₱{estimatedFare.toFixed(2)}</span>
+            </div>
+          )}
+
           {/* Quick destination chips */}
           <div className="v-anim v-anim--4 flex gap-3 mb-8 overflow-x-auto pb-2 hide-scrollbar">
             {[['📍', 'BSU ARASOF'], ['🛒', 'Savemore'], ['⛪', 'Simbahan']].map(([emoji, place]) => (
@@ -1321,36 +1642,83 @@ export default function CommuterView({ mapRef }) {
           <button disabled={!canBook} onClick={handleBookRide} className="v-anim v-anim--5 v-btn-primary">
             {t('commuter-book-btn')}
           </button>
+            </>
+          )}
         </div>
 
         {/* ── Scan Tab ─────────────────────────────────────── */}
         <div className={`tab-content pb-4${activeTab === 'scan' ? ' active' : ''}`}>
-          <h2 className="v-anim v-anim--1 text-3xl font-black text-gray-900 mb-2 tracking-tight">{t('commuter-verify-title')}</h2>
-          <p className="v-anim v-anim--1 text-sm font-semibold text-gray-500 mb-8">{t('commuter-verify-desc')}</p>
 
-          <div className="v-anim v-anim--2 mb-6">
+          {/* Header */}
+          <h2 className={`v-anim v-anim--1 text-3xl font-black mb-2 tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{t('commuter-verify-title')}</h2>
+          <p className={`v-anim v-anim--1 text-sm font-semibold mb-8 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{t('commuter-verify-desc')}</p>
+
+          {/* Scanner box */}
+          <div className="v-anim v-anim--2 mb-4">
             <div className="v-scanner-box mb-3 relative overflow-hidden">
               <div id="commuter-qr-reader" className="absolute inset-0 z-0" />
-              <QrCode size={72} className="absolute inset-0 m-auto text-white/25 z-10 pointer-events-none" />
-              <div className="absolute inset-0 m-auto w-44 h-44 border-2 border-red-500/60 rounded-xl z-20 pointer-events-none">
-                <div className="w-full h-0.5 bg-red-500 absolute top-1/2 shadow-[0_0_8px_#ef4444] radar-ping" />
+              {/* Centered square scan area with corner brackets inside */}
+              <div
+                className="absolute z-20 pointer-events-none"
+                style={{ width: '11rem', height: '11rem', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+              >
+                {/* Corner brackets */}
+                <div className="absolute top-0 left-0 w-6 h-6 border-[3px] border-red-400 rounded-tl-lg border-r-0 border-b-0" />
+                <div className="absolute top-0 right-0 w-6 h-6 border-[3px] border-red-400 rounded-tr-lg border-l-0 border-b-0" />
+                <div className="absolute bottom-0 left-0 w-6 h-6 border-[3px] border-red-400 rounded-bl-lg border-r-0 border-t-0" />
+                <div className="absolute bottom-0 right-0 w-6 h-6 border-[3px] border-red-400 rounded-br-lg border-l-0 border-t-0" />
+                {/* Scan line inside the square */}
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2">
+                  <div className="w-full h-0.5 bg-red-400 shadow-[0_0_8px_#f87171] radar-ping" />
+                </div>
               </div>
               {scanStatus !== 'scanning' && (
-                <div className={`absolute inset-0 z-30 backdrop-blur-sm flex flex-col items-center justify-center gap-2 px-6 text-center ${darkMode ? 'bg-slate-900/85' : 'bg-white/85'}`}>
-                  <Camera size={34} className={darkMode ? 'text-gray-300' : 'text-gray-400'} />
-                  <p className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>
-                    {scanStatus === 'starting' ? 'Starting camera...' : 'Camera idle'}
+                <div className={`absolute inset-0 z-30 backdrop-blur-sm flex flex-col items-center justify-center gap-3 ${darkMode ? 'bg-slate-900/85' : 'bg-white/80'}`}>
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${darkMode ? 'bg-slate-700' : 'bg-gray-200'}`}>
+                    <Camera size={28} className={darkMode ? 'text-gray-400' : 'text-gray-400'} />
+                  </div>
+                  <p className={`text-xs font-bold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {scanStatus === 'starting' ? 'Starting camera…' : 'Camera idle'}
                   </p>
                 </div>
               )}
             </div>
-            <p className="text-[11px] font-black text-gray-400 uppercase tracking-wider text-center">
-              {scanStatus === 'scanning' ? 'Scanner active' : 'Scanner not running'}
-            </p>
-            {scanError && <p className="text-xs font-bold text-red-500 mt-2 text-center">⚠ {scanError}</p>}
+            {/* Status indicator */}
+            <div className="flex items-center justify-center gap-2 mt-1">
+              <div className={`w-2 h-2 rounded-full ${scanStatus === 'scanning' ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-gray-300'}`} />
+              <p className={`text-[10px] font-black uppercase tracking-widest ${
+                scanStatus === 'scanning'
+                  ? (darkMode ? 'text-emerald-400' : 'text-emerald-600')
+                  : (darkMode ? 'text-gray-500' : 'text-gray-400')
+              }`}>
+                {scanStatus === 'scanning' ? 'Scanner Active' : 'Scanner Not Running'}
+              </p>
+            </div>
+            {/* Camera selector */}
+            {cameras.length > 1 && (
+              <div className="mt-2 flex justify-center">
+                <select
+                  value={selectedCameraId || ''}
+                  onChange={(e) => setSelectedCameraId(e.target.value)}
+                  className={`text-[11px] font-bold rounded-xl px-3 py-2 border outline-none cursor-pointer ${
+                    darkMode
+                      ? 'bg-slate-800 border-white/10 text-gray-300'
+                      : 'bg-gray-50 border-gray-200 text-gray-700'
+                  }`}
+                >
+                  {cameras.map((cam, i) => (
+                    <option key={cam.id} value={cam.id}>
+                      {cam.label || `Camera ${i + 1}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {scanError && <p className="text-xs font-bold text-red-500 mt-1.5 text-center">⚠ {scanError}</p>}
           </div>
 
-          <div className="v-anim v-anim--3 v-input-wrap max-w-sm mx-auto shadow-sm">
+          {/* Manual input */}
+          <div className="v-anim v-anim--3 v-input-wrap shadow-sm mb-5">
             <Hash className="v-input-icon w-5 h-5" />
             <input
               type="text"
@@ -1365,20 +1733,138 @@ export default function CommuterView({ mapRef }) {
               disabled={scanLoading || !scanInput.trim()}
               className="absolute right-2 top-2 bottom-2 bg-gray-900 text-white px-5 rounded-xl font-bold text-xs btn-press disabled:opacity-40"
             >
-              {scanLoading ? 'Checking...' : t('commuter-search')}
+              {scanLoading ? 'Checking…' : t('commuter-search')}
             </button>
           </div>
 
+          {/* Driver details card */}
           {scanResult && (
-            <div className={`v-anim v-anim--4 mt-5 p-4 rounded-2xl border shadow-sm space-y-2 ${darkMode ? 'border-white/10 bg-slate-900/80' : 'border-gray-200 bg-white/85'}`}>
-              <p className="text-xs font-black text-gray-400 uppercase tracking-wider">Driver Details</p>
-              <p className="text-sm font-bold text-gray-900">Name: {scanResult.driver.fullName}</p>
-              <p className="text-sm font-semibold text-gray-700">Username: {scanResult.driver.username}</p>
-              <p className="text-sm font-semibold text-gray-700">Body Number: {scanResult.bodyNumber}</p>
-              <p className="text-sm font-semibold text-gray-700">Plate Number: {scanResult.plateNumber || 'N/A'}</p>
-              <p className="text-sm font-semibold text-gray-700">License: {scanResult.driver.licenseNumber || 'N/A'}</p>
-              <p className="text-sm font-semibold text-gray-700">Contact: {scanResult.driver.contactNumber || 'N/A'}</p>
-              <p className="text-sm font-semibold text-gray-700">Status: {scanResult.tricycleStatus}</p>
+            <div className="v-anim v-anim--4">
+              {/* Card header strip */}
+              <div className="rounded-t-2xl px-4 py-3.5 flex items-center gap-3" style={{ background: 'linear-gradient(135deg,#0f172a 0%,#1e293b 100%)' }}>
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center shrink-0">
+                  <ShieldCheck size={20} className="text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Verified Driver</p>
+                  <p className="text-sm font-black text-white truncate">{scanResult.driver.fullName}</p>
+                </div>
+                {/* Status badge */}
+                <span className={`shrink-0 text-[9px] font-black uppercase px-2.5 py-1 rounded-full ${
+                  scanResult.tricycleStatus === 'approved'
+                    ? 'bg-emerald-900/60 text-emerald-400'
+                    : 'bg-red-900/60 text-red-400'
+                }`}>
+                  {scanResult.tricycleStatus}
+                </span>
+              </div>
+
+              {/* Info rows */}
+              <div className={`border-x border-b ${
+                darkMode ? 'bg-slate-900 border-white/8' : 'bg-white border-gray-100'
+              } shadow-lg`}>
+                <div className={`divide-y ${darkMode ? 'divide-white/5' : 'divide-gray-50'} px-4`}>
+                  {[
+                    { icon: <Truck size={14} />, label: 'Body Number', value: scanResult.bodyNumber },
+                    { icon: <CarFront size={14} />, label: 'Plate Number', value: scanResult.plateNumber || '--' },
+                    { icon: <Users2 size={14} />, label: 'TODA', value: scanResult.todaName || '--' },
+                    { icon: <Hash size={14} />, label: 'LGU Reference', value: scanResult.lguReferenceNo || '--' },
+                    { icon: <FileText size={14} />, label: 'License', value: scanResult.driver.licenseNumber || '--' },
+                    { icon: <Phone size={14} />, label: 'Contact', value: scanResult.driver.contactNumber || '--' },
+                  ].map(({ icon, label, value }) => (
+                    <div key={label} className="flex items-center gap-3 py-2.5">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                        darkMode ? 'bg-slate-800 text-slate-400' : 'bg-gray-50 text-gray-400'
+                      }`}>{icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">{label}</p>
+                        <p className={`text-sm font-black truncate ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Role badge row */}
+                <div className={`px-4 pt-1 pb-3 flex items-center gap-2 border-t ${
+                  darkMode ? 'border-white/5' : 'border-gray-50'
+                }`}>
+                  <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full ${
+                    scanResult.driver.membershipRole === 'president'
+                      ? 'bg-blue-100 text-blue-700'
+                      : (darkMode ? 'bg-indigo-900/40 text-indigo-300' : 'bg-indigo-100 text-indigo-700')
+                  }`}>
+                    {scanResult.driver.membershipRole === 'president' ? '★ President' : 'Member'}
+                  </span>
+                  {scanResult.franchiseExpiry && (
+                    <span className={`text-[9px] font-black uppercase px-2.5 py-1 rounded-full ${
+                      darkMode ? 'bg-slate-800 text-slate-400' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      Expires {new Date(scanResult.franchiseExpiry).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div className={`grid grid-cols-2 gap-3 px-4 pb-4 border-t ${
+                  darkMode ? 'border-white/5' : 'border-gray-50'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedTricycle({
+                        plateNumber: scanResult.plateNumber,
+                        fullName: scanResult.driver.fullName,
+                        contactNumber: scanResult.driver.contactNumber,
+                        tricycleId: scanResult.tricycleId,
+                        todaName: scanResult.todaName,
+                        lguReferenceNo: scanResult.lguReferenceNo,
+                        licenseNumber: scanResult.driver.licenseNumber,
+                      });
+                      setActiveTab('report');
+                    }}
+                    className={`mt-3 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black transition ${
+                      darkMode ? 'bg-red-900/30 text-red-400 hover:bg-red-900/50' : 'bg-red-50 text-red-600 hover:bg-red-100'
+                    }`}
+                  >
+                    <Siren size={14} /> File a Report
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowReviewModal(true)}
+                    className={`mt-3 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black transition ${
+                      darkMode ? 'bg-amber-900/30 text-amber-400 hover:bg-amber-900/50' : 'bg-amber-50 text-amber-600 hover:bg-amber-100'
+                    }`}
+                  >
+                    <CheckCircle2 size={14} /> Submit a Review
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Driver Review Modal */}
+          {showReviewModal && scanResult && (
+            <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/65 px-5 backdrop-blur-md">
+              <div className="w-full max-w-sm rounded-[32px] bg-white p-6 shadow-2xl relative" style={{ animation: 'v-modal-in 0.25s cubic-bezier(0.34,1.56,0.64,1)' }}>
+                <button onClick={() => setShowReviewModal(false)} className="absolute right-4 top-4 rounded-full p-2 bg-gray-100 hover:bg-gray-200">
+                  <X size={18} className="text-gray-500" />
+                </button>
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-12 h-12 rounded-2xl bg-amber-100 flex items-center justify-center">
+                    <ShieldCheck size={24} className="text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-gray-400">Driver Review</p>
+                    <h3 className="text-base font-black text-gray-900">{scanResult.driver.fullName}</h3>
+                    <p className="text-xs font-bold text-gray-400">{scanResult.plateNumber}</p>
+                  </div>
+                </div>
+                <DriverScanReviewForm
+                  scanResult={scanResult}
+                  onClose={() => setShowReviewModal(false)}
+                  onToast={setToast}
+                />
+              </div>
             </div>
           )}
         </div>

@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, Shield, AlertTriangle, Route,
   LogOut, Menu, X, Bell, User as UserIcon, Sun, Moon,
-  TrendingUp, FileCheck, Car, AlertOctagon,
+  TrendingUp, FileCheck, Car, AlertOctagon, Settings2, Star
 } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { logout } from '../services/api';
 import DriversTricyclesTab from '../components/admin/DriversTricyclesTab';
 import FranchisesTab from '../components/admin/FranchisesTab';
+import FareSettingsTab from '../components/admin/FareSettingsTab';
+import RatingsTab from '../components/admin/RatingsTab';
 
 function GlassCard({ children, className = '', dm = true }) {
   return (
@@ -100,6 +102,8 @@ export default function AdminView() {
     { id: 'franchises', label: 'Franchises', icon: Shield },
     { id: 'rides', label: 'Live Rides', icon: Route },
     { id: 'complaints', label: 'Complaints', icon: AlertTriangle },
+    { id: 'fare_settings', label: 'Fare Settings', icon: Settings2 },
+    { id: 'ratings', label: 'Ride Ratings', icon: Star },
   ];
 
   async function handleLogout() {
@@ -186,6 +190,8 @@ export default function AdminView() {
             {activeTab === 'franchises' && <FranchisesTab dm={dm} />}
             {activeTab === 'rides' && <PlaceholderTab dm={dm} icon={Route} title="Live Ride Tracking" description="Real-time ride monitoring will connect here next." />}
             {activeTab === 'complaints' && <PlaceholderTab dm={dm} icon={AlertTriangle} title="Complaints Center" description="Complaint resolution tools can be connected to the new admin endpoints next." />}
+            {activeTab === 'fare_settings' && <FareSettingsTab dm={dm} />}
+            {activeTab === 'ratings' && <RatingsTab dm={dm} />}
           </div>
         </div>
       </main>

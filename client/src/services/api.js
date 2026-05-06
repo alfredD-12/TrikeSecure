@@ -355,3 +355,21 @@ export async function contactSupport(payload) {
   });
   return parseResponse(res);
 }
+export async function submitRating(payload) {
+  const res = await fetch(`${API_URL}/ratings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  return parseResponse(res);
+}
+
+export async function getFareSettings() {
+  const res = await fetch(`${API_URL}/fare/latest`, { credentials: 'include' });
+  return parseResponse(res);
+}
+
+export async function getDriverRideHistory(limit = 30, offset = 0) {
+  return apiFetch(`/rides/driver-history?limit=${limit}&offset=${offset}`);
+}

@@ -320,6 +320,69 @@
   }
 }
 
+/* ─── Full-screen modal backdrop ─────────────────────────── */
+@keyframes v-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes v-backdrop-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+/* Spring card entry — scales up from 90% + slight upward slide */
+@keyframes v-card-in {
+  0%   { opacity: 0; transform: scale(0.88) translateY(24px); }
+  60%  { opacity: 1; transform: scale(1.02) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1)   translateY(0); }
+}
+
+@keyframes v-card-out {
+  from { opacity: 1; transform: scale(1)    translateY(0); }
+  to   { opacity: 0; transform: scale(0.92) translateY(16px); }
+}
+
+.v-modal-backdrop {
+  animation: v-backdrop-in 0.25s ease forwards;
+}
+
+.v-modal-backdrop--closing {
+  animation: v-backdrop-out 0.22s ease forwards;
+}
+
+.v-modal-card {
+  animation: v-card-in 0.38s cubic-bezier(0.34, 1.42, 0.64, 1) forwards;
+}
+
+.v-modal-card--closing {
+  animation: v-card-out 0.22s ease-in forwards;
+}
+
+/* ─── Ride timeline bar shimmer ──────────────────────────── */
+@keyframes ride-shimmer {
+  0%   { transform: translateX(-180%); }
+  100% { transform: translateX(180%); }
+}
+
+.ride-bar-active {
+  position: relative;
+  overflow: hidden;
+}
+
+.ride-bar-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent    0%,
+    rgba(255,255,255,0.55) 50%,
+    transparent    100%
+  );
+  animation: ride-shimmer 1.7s ease-in-out infinite;
+}
+
 /* Center pin wrapper */
 .v-center-pin-wrap {
   position: fixed;
@@ -557,17 +620,30 @@ body.dark-mode .v-pin-btn-cancel:hover {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
 }
 
-.v-earnings-card::before {
+/* Shimmer sweep overlay */
+.v-earnings-card::after {
   content: '';
   position: absolute;
-  top: -30px;
-  right: -30px;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: rgba(239, 68, 68, 0.12);
-  filter: blur(30px);
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 65%
+  );
+  background-size: 200% 100%;
+  animation: v-earnings-shimmer 3.5s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
 }
+
+@keyframes v-earnings-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+
+
 
 /* ═══ Online status card (driver) ═══ */
 .v-online-card {
@@ -1002,3 +1078,145 @@ body.dark-mode .v-cancel-search-btn {
     transform: translateX(100%);
   }
 }
+
+/* ═══ Ride request toast / popup card ═══ */
+@keyframes v-toast-in {
+  0%   { opacity: 0; transform: translateY(-18px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+.v-ride-toast {
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  border-radius: 20px;
+  padding: 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.14), 0 4px 12px rgba(0, 0, 0, 0.06);
+  animation: v-toast-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+body.dark-mode .v-ride-toast {
+  background: rgba(17, 24, 39, 0.96);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.v-ride-toast__header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+}
+
+.v-ride-toast__label {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; font-weight: 900; text-transform: uppercase;
+  letter-spacing: 0.12em; color: #f97316;
+}
+
+.v-ride-toast__label-icon {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(249, 115, 22, 0.12);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+body.dark-mode .v-ride-toast__label-icon { background: rgba(249, 115, 22, 0.22); }
+
+.v-ride-toast__dismiss {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: none; background: rgba(107, 114, 128, 0.1); color: #9ca3af;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s, transform 0.1s; flex-shrink: 0;
+}
+.v-ride-toast__dismiss:hover  { background: rgba(107, 114, 128, 0.18); }
+.v-ride-toast__dismiss:active { transform: scale(0.9); }
+body.dark-mode .v-ride-toast__dismiss { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.45); }
+body.dark-mode .v-ride-toast__dismiss:hover { background: rgba(255,255,255,0.14); }
+
+.v-ride-toast__route {
+  background: rgba(249, 250, 251, 0.8);
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  border-radius: 12px; padding: 10px 12px; margin-bottom: 9px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+body.dark-mode .v-ride-toast__route {
+  background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.07);
+}
+
+.v-ride-toast__route-row { display: flex; align-items: flex-start; gap: 9px; }
+
+.v-ride-toast__dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px;
+}
+.v-ride-toast__dot--pickup  { background: #3b82f6; }
+.v-ride-toast__dot--dropoff { background: #ef4444; }
+
+.v-ride-toast__route-text {
+  font-size: 12px; font-weight: 700; color: #1f2937;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body.dark-mode .v-ride-toast__route-text { color: rgba(255,255,255,0.88); }
+
+.v-ride-toast__pills { display: flex; gap: 7px; margin-bottom: 10px; }
+
+.v-ride-toast__pill { flex: 1; border-radius: 10px; padding: 7px 10px; text-align: center; }
+
+.v-ride-toast__pill--fare {
+  background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.2);
+}
+body.dark-mode .v-ride-toast__pill--fare {
+  background: rgba(16,185,129,0.14); border-color: rgba(16,185,129,0.25);
+}
+
+.v-ride-toast__pill--dist {
+  background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2);
+}
+body.dark-mode .v-ride-toast__pill--dist {
+  background: rgba(59,130,246,0.14); border-color: rgba(59,130,246,0.25);
+}
+
+.v-ride-toast__pill-label {
+  font-size: 9px; font-weight: 900; text-transform: uppercase;
+  letter-spacing: 0.1em; display: block; margin-bottom: 1px;
+}
+.v-ride-toast__pill--fare .v-ride-toast__pill-label { color: #059669; }
+body.dark-mode .v-ride-toast__pill--fare .v-ride-toast__pill-label { color: #34d399; }
+.v-ride-toast__pill--dist .v-ride-toast__pill-label { color: #2563eb; }
+body.dark-mode .v-ride-toast__pill--dist .v-ride-toast__pill-label { color: #60a5fa; }
+
+.v-ride-toast__pill-value { font-size: 13px; font-weight: 900; display: block; }
+.v-ride-toast__pill--fare .v-ride-toast__pill-value { color: #059669; }
+body.dark-mode .v-ride-toast__pill--fare .v-ride-toast__pill-value { color: #34d399; }
+.v-ride-toast__pill--dist .v-ride-toast__pill-value { color: #2563eb; }
+body.dark-mode .v-ride-toast__pill--dist .v-ride-toast__pill-value { color: #60a5fa; }
+
+.v-ride-toast__actions { display: flex; gap: 7px; }
+
+.v-ride-toast__btn-accept {
+  flex: 1; background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: white; border: none; border-radius: 11px; padding: 10px;
+  font-size: 13px; font-weight: 800; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(22,163,74,0.3);
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+.v-ride-toast__btn-accept:active  { transform: scale(0.96); box-shadow: 0 2px 8px rgba(22,163,74,0.2); }
+.v-ride-toast__btn-accept:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.v-ride-toast__btn-dismiss {
+  flex: 1; background: rgba(107,114,128,0.1); color: #4b5563;
+  border: 1px solid rgba(107,114,128,0.2); border-radius: 11px; padding: 10px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.v-ride-toast__btn-dismiss:hover  { background: rgba(107,114,128,0.16); }
+.v-ride-toast__btn-dismiss:active { transform: scale(0.97); }
+body.dark-mode .v-ride-toast__btn-dismiss {
+  background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7);
+  border-color: rgba(255,255,255,0.1);
+}
+body.dark-mode .v-ride-toast__btn-dismiss:hover { background: rgba(255,255,255,0.13); }
+
+.v-ride-toast__note {
+  margin-top: 8px; font-size: 10px; font-weight: 600;
+  color: #9ca3af; text-align: center;
+}
+body.dark-mode .v-ride-toast__note { color: rgba(255,255,255,0.3); }
+
