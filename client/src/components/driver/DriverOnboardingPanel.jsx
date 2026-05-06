@@ -612,18 +612,28 @@ export default function DriverOnboardingPanel({
     validIdDocument: '',
   });
   const [todaCodePreview, setTodaCodePreview] = useState('');
-  const [franchiseForm, setFranchiseForm] = useState({
+
+  function generateQrCode() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+    return `TSC-${y}${m}${d}-${rand}`;
+  }
+
+  const [franchiseForm, setFranchiseForm] = useState(() => ({
     bodyNumber: '',
     plateNumber: '',
     makeModel: '',
     color: '',
     engineNumber: '',
     chassisNumber: '',
-    qrCodeValue: '',
+    qrCodeValue: generateQrCode(),
     todaCertificateDocument: '',
     orCrDocument: '',
     insuranceDocument: '',
-  });
+  }));
 
   // OCR lock state — fields start locked, unlock after OCR or manual pencil click
   const [membershipLicenseLocked, setMembershipLicenseLocked] = useState(true);
@@ -707,18 +717,19 @@ export default function DriverOnboardingPanel({
       validIdDocument: driverProfile.validIdDocument || '',
     });
 
-    setFranchiseForm({
+    setFranchiseForm((prev) => ({
       bodyNumber: driverProfile.bodyNumber || '',
       plateNumber: driverProfile.plateNumber || '',
       makeModel: driverProfile.makeModel || '',
       color: driverProfile.color || '',
       engineNumber: driverProfile.engineNumber || '',
       chassisNumber: driverProfile.chassisNumber || '',
-      qrCodeValue: driverProfile.qrCodeValue || '',
+      // Preserve existing QR from DB; keep auto-generated one if none stored yet
+      qrCodeValue: driverProfile.qrCodeValue || prev.qrCodeValue,
       todaCertificateDocument: driverProfile.todaCertificateDocument || '',
       orCrDocument: driverProfile.orCrDocument || '',
       insuranceDocument: driverProfile.insuranceDocument || '',
-    });
+    }));
   }, [driverProfile, nasugbuBarangays]);
 
   useEffect(() => {
@@ -1123,12 +1134,18 @@ export default function DriverOnboardingPanel({
                 />
               </div>
 
-              <LabeledInput
-                label="QR Code Value"
-                value={franchiseForm.qrCodeValue}
-                onChange={(event) => setFranchiseForm((current) => ({ ...current, qrCodeValue: event.target.value }))}
-                placeholder="TRIKE-QR-001"
-              />
+              <div className="relative">
+                <LabeledInput
+                  label="QR Code Value"
+                  value={franchiseForm.qrCodeValue}
+                  onChange={() => {}}
+                  placeholder="Auto-generated"
+                  readOnly
+                />
+                <span className="mt-1 flex items-center gap-1 text-[10px] font-bold text-emerald-600">
+                  <CheckCircle2 size={10} /> Auto-generated — cannot be edited
+                </span>
+              </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <FileField
