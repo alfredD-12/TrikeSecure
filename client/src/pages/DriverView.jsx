@@ -11,7 +11,6 @@ import { useApp } from '../contexts/AppContext';
 import Header from '../components/Header';
 import MapControls from '../components/MapControls';
 import BottomSheet from '../components/BottomSheet';
-import SOSButton from '../components/SOSButton';
 import DriverOnboardingPanel from '../components/driver/DriverOnboardingPanel';
 import DriverOnboardingTour from '../components/driver/DriverOnboardingTour';
 import PresidentMembershipTab from '../components/driver/PresidentMembershipTab';
@@ -1886,8 +1885,6 @@ export default function DriverView({ mapRef }) {
           {driverProfile && <DriverQrTab profile={driverProfile} darkMode={darkMode} />}
         </div>
       </BottomSheet>
-
-      {!isOnboardingLocked && <SOSButton rideId={activeDriverRide?.requestId || null} />}
 
       {/* Bottom Nav */}
       <nav className="v-nav">

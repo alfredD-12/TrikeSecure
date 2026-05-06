@@ -937,8 +937,8 @@ body.dark-mode .v-route-line {
 
 /* ═══ Emergency SOS button ═══ */
 .v-sos-fab {
-  position: fixed;
-  right: max(16px, calc((100vw - 32rem) / 2 + 16px));
+  position: absolute;
+  right: 16px;
   bottom: calc(150px + env(safe-area-inset-bottom));
   z-index: 90;
   width: 62px;
