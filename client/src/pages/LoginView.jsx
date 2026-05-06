@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Mail, Lock, LogIn, Loader2, Eye, EyeOff, UserPlus, User } from 'lucide-react';
 import { useApp } from '../contexts/AppContext';
 import { login, register } from '../services/api';
@@ -26,6 +26,7 @@ export default function LoginView() {
   });
   const [statusMessage, setStatusMessage] = useState('');
   const [loading, setLoading]   = useState(false);
+  const isSubmittingRef = useRef(false);  // ref-based guard prevents race-condition double submits
   const [emailFocused, setEmailFocused] = useState(false);
   const [passFocused, setPassFocused]   = useState(false);
   const [confirmPassFocused, setConfirmPassFocused] = useState(false);
@@ -42,6 +43,7 @@ export default function LoginView() {
 
   async function handleAction(e) {
     e.preventDefault();
+    if (isSubmittingRef.current) return;   // ← stop duplicate submissions immediately
     clearErrors();
     setStatusMessage('');
 
@@ -82,6 +84,7 @@ export default function LoginView() {
         return;
       }
 
+      isSubmittingRef.current = true;
       setLoading(true);
 
       try {
@@ -96,16 +99,27 @@ export default function LoginView() {
           setConfirmPass('');
           clearErrors();
           setStatusMessage('Account created successfully. Please sign in.');
+          isSubmittingRef.current = false;
+          setLoading(false);
           return;
         }
 
-        setFieldErrors((prev) => ({ ...prev, form: data.message || 'Registration failed.' }));
+        // 409 — email already registered → nudge user to sign in
+        const isDuplicate = data.status === 409 ||
+          (data.message || '').toLowerCase().includes('already');
+        setFieldErrors((prev) => ({
+          ...prev,
+          form: isDuplicate
+            ? 'This email is already registered. Try signing in instead.'
+            : (data.message || 'Registration failed.'),
+        }));
       } catch {
         setFieldErrors((prev) => ({
           ...prev,
           form: 'Unable to reach the server. Check your network and API URL.',
         }));
       } finally {
+        isSubmittingRef.current = false;
         setLoading(false);
       }
 
@@ -128,6 +142,7 @@ export default function LoginView() {
       return;
     }
 
+    isSubmittingRef.current = true;
     setLoading(true);
 
     try {
@@ -157,6 +172,7 @@ export default function LoginView() {
         form: 'Unable to reach the server. Check your network and API URL.',
       }));
     } finally {
+      isSubmittingRef.current = false;
       setLoading(false);
     }
   }

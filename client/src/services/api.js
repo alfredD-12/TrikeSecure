@@ -370,6 +370,22 @@ export async function getFareSettings() {
   return parseResponse(res);
 }
 
+
 export async function getDriverRideHistory(limit = 30, offset = 0) {
   return apiFetch(`/rides/driver-history?limit=${limit}&offset=${offset}`);
+}
+
+export async function getAdminComplaints(status = null) {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return apiFetch(`/admin/complaints${suffix}`);
+}
+
+export async function resolveAdminComplaint(complaintId) {
+  return apiFetch(`/admin/complaints/${complaintId}/resolve`, { method: 'PATCH' });
+}
+
+export async function getAdminRatings() {
+  return apiFetch(`/admin/ratings`);
 }

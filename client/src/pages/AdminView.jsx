@@ -10,6 +10,8 @@ import DriversTricyclesTab from '../components/admin/DriversTricyclesTab';
 import FranchisesTab from '../components/admin/FranchisesTab';
 import FareSettingsTab from '../components/admin/FareSettingsTab';
 import RatingsTab from '../components/admin/RatingsTab';
+import LiveRidesTab from '../components/admin/LiveRidesTab';
+import ComplaintsTab from '../components/admin/ComplaintsTab';
 
 function GlassCard({ children, className = '', dm = true }) {
   return (
@@ -183,15 +185,15 @@ export default function AdminView() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto p-6 sm:p-8">
-          <div className="mx-auto max-w-7xl">
-            {activeTab === 'overview' && <OverviewTab dm={dm} onSelectTab={setActiveTab} />}
-            {activeTab === 'drivers' && <DriversTricyclesTab dm={dm} />}
+        <div className={`flex-1 overflow-auto p-6 sm:p-8 ${activeTab === 'rides' ? 'overflow-hidden p-0' : ''}`}>
+          <div className={activeTab === 'rides' ? 'h-full p-6 sm:p-8 flex flex-col' : 'mx-auto max-w-7xl'}>
+            {activeTab === 'overview'   && <OverviewTab dm={dm} onSelectTab={setActiveTab} />}
+            {activeTab === 'drivers'    && <DriversTricyclesTab dm={dm} />}
             {activeTab === 'franchises' && <FranchisesTab dm={dm} />}
-            {activeTab === 'rides' && <PlaceholderTab dm={dm} icon={Route} title="Live Ride Tracking" description="Real-time ride monitoring will connect here next." />}
-            {activeTab === 'complaints' && <PlaceholderTab dm={dm} icon={AlertTriangle} title="Complaints Center" description="Complaint resolution tools can be connected to the new admin endpoints next." />}
+            {activeTab === 'rides'      && <LiveRidesTab dm={dm} />}
+            {activeTab === 'complaints' && <ComplaintsTab dm={dm} />}
             {activeTab === 'fare_settings' && <FareSettingsTab dm={dm} />}
-            {activeTab === 'ratings' && <RatingsTab dm={dm} />}
+            {activeTab === 'ratings'    && <RatingsTab dm={dm} />}
           </div>
         </div>
       </main>

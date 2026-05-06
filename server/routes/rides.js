@@ -848,4 +848,6 @@ router.get('/driver-history', requireAuth, requireRole('driver'), async (req, re
   }
 });
 
+router.getDriverLocations = () => driverLocations;
 module.exports = router;
+

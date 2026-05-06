@@ -281,3 +281,7 @@ export async function reviewAdminFranchise(franchiseId, payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export async function getAdminLiveRides() {
+  return apiFetch('/admin/rides/live');
+}

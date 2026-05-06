@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { requireAuth, requireRole } = require('../auth/sessionAuth');
+const ridesRouter = require('./rides');
 
 router.use(requireAuth, requireRole('admin'));
 
@@ -537,6 +538,64 @@ router.patch('/franchises/:id/review', async (req, res) => {
   }
 });
 
+router.get('/rides/live', async (_req, res) => {
+  const LIVE = ['waiting', 'accepted', 'arrived', 'in_progress'];
+  const placeholders = LIVE.map(() => '?').join(', ');
+  try {
+    const [rows] = await db.query(
+      `SELECT
+          r.request_id AS requestId,
+          r.pickup_location AS pickupLocation,
+          r.dropoff_location AS dropoffLocation,
+          r.pickup_lat AS pickupLat,
+          r.pickup_lng AS pickupLng,
+          r.dropoff_lat AS dropoffLat,
+          r.dropoff_lng AS dropoffLng,
+          r.fare_amount AS fareAmount,
+          r.request_time AS requestTime,
+          r.status,
+          commuter.full_name AS commuterName,
+          driver_user.full_name AS driverName,
+          d.driver_id AS driverId,
+          t.body_number AS bodyNumber,
+          t.plate_number AS plateNumber,
+          td.toda_name AS todaName
+        FROM ride_requests r
+        INNER JOIN users commuter ON commuter.user_id = r.commuter_id
+        LEFT JOIN drivers d ON d.driver_id = r.assigned_driver_id
+        LEFT JOIN users driver_user ON driver_user.user_id = d.user_id
+        LEFT JOIN tricycles t ON t.driver_id = d.driver_id AND t.status = 'approved'
+        LEFT JOIN todas td ON td.toda_id = d.toda_id
+        WHERE r.status IN (${placeholders})
+        ORDER BY
+          CASE r.status
+            WHEN 'in_progress' THEN 0
+            WHEN 'arrived' THEN 1
+            WHEN 'accepted' THEN 2
+            WHEN 'waiting' THEN 3
+          END,
+          r.request_time DESC`,
+      LIVE,
+    );
+
+    const driverLocations = ridesRouter.getDriverLocations();
+    const rides = rows.map(row => {
+      const loc = row.driverId ? driverLocations.get(row.driverId) : null;
+      return {
+        ...row,
+        driverLat: loc ? loc.lat : null,
+        driverLng: loc ? loc.lng : null,
+        driverLocationAge: loc ? Math.round((Date.now() - loc.updatedAtMs) / 1000) : null,
+      };
+    });
+
+    return res.json(rides);
+  } catch (error) {
+    console.error('Admin live rides error:', error);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 router.get('/rides', async (req, res) => {
   const statusFilter = normalizeOptionalText(req.query.status);
 
@@ -641,6 +700,32 @@ router.patch('/complaints/:id/resolve', async (req, res) => {
     return res.json({ message: 'Complaint marked as resolved.' });
   } catch (error) {
     console.error('Admin complaint resolve error:', error);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+/* ── GET /admin/ratings — All ride ratings ── */
+router.get('/ratings', async (req, res) => {
+  try {
+    const [ratings] = await db.query(
+      `SELECT rr.rating_id, rr.rating_value, rr.feedback, rr.created_at,
+              u_commuter.full_name AS commuter_name,
+              u_driver.full_name   AS driver_name,
+              t.body_number,
+              t.plate_number,
+              toda.toda_name,
+              d.driver_id
+       FROM ride_ratings rr
+       JOIN users u_commuter ON rr.commuter_id = u_commuter.user_id
+       JOIN drivers d         ON rr.driver_id   = d.driver_id
+       JOIN users u_driver    ON d.user_id       = u_driver.user_id
+       LEFT JOIN tricycles t  ON d.driver_id     = t.driver_id
+       LEFT JOIN todas toda ON toda.toda_id = d.toda_id
+       ORDER BY rr.created_at DESC`
+    );
+    return res.json(ratings);
+  } catch (error) {
+    console.error('Admin ratings fetch error:', error);
     return res.status(500).json({ message: 'Server error.' });
   }
 });
