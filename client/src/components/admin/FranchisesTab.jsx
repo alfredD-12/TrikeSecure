@@ -72,8 +72,21 @@ function Metric({ dm, label, value, icon, color }) {
 
 function fmtDate(v) { if (!v) return 'Not set'; const d = new Date(v); return isNaN(d) ? v : d.toLocaleDateString(); }
 function fmtDateTime(v) { if (!v) return 'Not recorded'; const d = new Date(v); return isNaN(d) ? v : d.toLocaleString(); }
+
+function generateLguRef() {
+  const year = new Date().getFullYear();
+  const seq = String(Math.floor(Math.random() * 9000) + 1000);
+  return `NSG-${year}-${seq}`;
+}
+
 function defaultForm(item) {
-  return { issueDate: item.issueDate ? String(item.issueDate).slice(0,10) : '', expiryDate: item.expiryDate ? String(item.expiryDate).slice(0,10) : '', lguReferenceNo: item.lguReferenceNo || '', remarks: item.remarks || '' };
+  const autoRef = !item.lguReferenceNo && item.status === 'pending' ? generateLguRef() : '';
+  return {
+    issueDate: item.issueDate ? String(item.issueDate).slice(0,10) : '',
+    expiryDate: item.expiryDate ? String(item.expiryDate).slice(0,10) : '',
+    lguReferenceNo: item.lguReferenceNo || autoRef,
+    remarks: item.remarks || ''
+  };
 }
 
 const inCls = (dm) => `w-full rounded-xl border px-3 py-2.5 text-sm font-semibold outline-none transition disabled:opacity-60 disabled:cursor-not-allowed ${dm ? 'border-white/10 bg-white/5 text-white placeholder:text-gray-500' : 'border-gray-200 bg-white text-gray-900'}`;
