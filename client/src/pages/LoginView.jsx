@@ -156,6 +156,7 @@ export default function LoginView() {
         }
         const resolvedRole = data.role === 'driver' ? 'driver' : 'commuter';
         setCurrentUser({
+          userId: data.userId,
           username: data.username,
           fullName: data.fullName || data.username,
           email: data.email || email.trim().toLowerCase(),

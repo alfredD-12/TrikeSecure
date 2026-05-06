@@ -99,6 +99,7 @@ export function AppProvider({ children }) {
 
         const resolvedRole = me.role === 'driver' ? 'driver' : 'commuter';
         setCurrentUser({
+          userId: me.userId,
           username: me.username,
           fullName: me.fullName || me.username,
           email: me.email || '',

@@ -148,7 +148,7 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
-export default function CommuterOnboardingTour({ open, onClose, onStepChange }) {
+export default function CommuterOnboardingTour({ open, onClose, onStepChange, storageKey = 'ts_commuter_tour_done' }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [layout, setLayout] = useState(null);
   const totalSteps = TOUR_STEPS.length;
@@ -163,7 +163,6 @@ export default function CommuterOnboardingTour({ open, onClose, onStepChange }) 
 
   useEffect(() => {
     if (!open || step?.demo || !step?.target) {
-      setLayout(null);
       return undefined;
     }
 
@@ -225,7 +224,7 @@ export default function CommuterOnboardingTour({ open, onClose, onStepChange }) 
 
   function finishTour() {
     try {
-      localStorage.setItem('ts_commuter_tour_done', '1');
+      localStorage.setItem(storageKey, '1');
     } catch (error) {
       console.warn('Could not save commuter tour status.', error);
     }

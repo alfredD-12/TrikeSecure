@@ -21,6 +21,11 @@ import {
   distanceKm
 } from '../utils/rideMetrics';
 
+function getUserTourKey(prefix, user) {
+  const accountKey = user?.userId || user?.email || user?.username || 'guest';
+  return `${prefix}:${accountKey}`;
+}
+
 /* ── Ride Completion Modal ──────────────────────── */
 function RideCompletionModal({ ride, onClose }) {
   const [rating, setRating] = useState(0);
@@ -606,13 +611,23 @@ export default function CommuterView({ mapRef }) {
   const [reportDescription, setReportDescription] = useState('');
   const [toast, setToast] = useState(null);
   const [reportSubmitting, setReportSubmitting] = useState(false);
+  const commuterTourKey = getUserTourKey('ts_commuter_tour_done', currentUser);
   const [showCommuterTour, setShowCommuterTour] = useState(() => {
     try {
-      return localStorage.getItem('ts_commuter_tour_done') !== '1';
+      return localStorage.getItem(getUserTourKey('ts_commuter_tour_done', currentUser)) !== '1';
     } catch {
       return true;
     }
   });
+
+  useEffect(() => {
+    if (!currentUser) return;
+    try {
+      setShowCommuterTour(localStorage.getItem(commuterTourKey) !== '1');
+    } catch {
+      setShowCommuterTour(true);
+    }
+  }, [commuterTourKey, currentUser]);
 
   useEffect(() => {
     if (toast) {
@@ -1348,6 +1363,7 @@ export default function CommuterView({ mapRef }) {
         open={showCommuterTour}
         onClose={() => setShowCommuterTour(false)}
         onStepChange={handleTourStepChange}
+        storageKey={commuterTourKey}
       />
       {/* Modal at root level - over everything */}
       {(showPlateModal || isModalClosing) && selectedTricycle && (

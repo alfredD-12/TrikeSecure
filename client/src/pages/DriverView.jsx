@@ -40,6 +40,11 @@ import {
   distanceKm,
 } from '../utils/rideMetrics';
 
+function getUserTourKey(prefix, user) {
+  const accountKey = user?.userId || user?.email || user?.username || 'guest';
+  return `${prefix}:${accountKey}`;
+}
+
 // Format km distance for display in ride request cards
 function formatTripDistance(from, to) {
   if (!from || !to) return null;
@@ -642,9 +647,10 @@ export default function DriverView({ mapRef }) {
   const [submitting, setSubmitting] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(null);
   const [isCompletionClosing, setIsCompletionClosing] = useState(false);
+  const driverTourKey = getUserTourKey('ts_driver_tour_done', currentUser);
   const [showDriverTour, setShowDriverTour] = useState(() => {
     try {
-      return localStorage.getItem('ts_driver_tour_done') !== '1';
+      return localStorage.getItem(getUserTourKey('ts_driver_tour_done', currentUser)) !== '1';
     } catch {
       return true;
     }
@@ -657,6 +663,15 @@ export default function DriverView({ mapRef }) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const showPresidentTab = Boolean(driverProfile?.presidentToolsEnabled);
   const isOnboardingLocked = Boolean(driverProfile && !driverProfile.canOperate);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    try {
+      setShowDriverTour(localStorage.getItem(driverTourKey) !== '1');
+    } catch {
+      setShowDriverTour(true);
+    }
+  }, [driverTourKey, currentUser]);
 
   function showToast(msg, type = 'success') {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -1136,6 +1151,7 @@ export default function DriverView({ mapRef }) {
         open={showDriverTour && !profileLoading}
         onClose={() => setShowDriverTour(false)}
         onStepChange={handleDriverTourStepChange}
+        storageKey={driverTourKey}
         isOnboardingLocked={isOnboardingLocked}
         showPresidentTab={showPresidentTab}
       />
