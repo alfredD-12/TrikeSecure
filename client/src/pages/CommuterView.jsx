@@ -591,7 +591,7 @@ function DriverScanReviewForm({ scanResult, onClose, onToast }) {
 }
 
 export default function CommuterView({ mapRef }) {
-  const { t, setView, currentUser, setCurrentUser, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, liveLocation, isMapMoving, darkMode, setActiveCommuterRide, resetThemeForLogout } = useApp();
+  const { t, setView, currentUser, setCurrentUser, pinTarget, setPinTarget, userPickup, setUserPickup, destination, setDestination, destinationPin, setDestinationPin, liveLocation, isMapMoving, darkMode, activeCommuterRide, setActiveCommuterRide, resetThemeForLogout } = useApp();
   const [activeTab, setActiveTab] = useState('ride');
   const [fareSettings, setFareSettings] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -709,6 +709,8 @@ export default function CommuterView({ mapRef }) {
   // Computed state for booking validation
   const canBook = userPickup && destination && destinationPin && !activeRide;
   const needsDestinationPin = Boolean(userPickup && destination && !destinationPin && !activeRide);
+  const sosRide = activeRide || activeCommuterRide;
+  const shouldShowSos = Boolean(sosRide && !['waiting', 'completed', 'cancelled'].includes(sosRide.status));
 
   let estimatedFare = null;
   if (canBook && fareSettings) {
@@ -2769,7 +2771,7 @@ export default function CommuterView({ mapRef }) {
         </div>
       </BottomSheet>
 
-      {activeRide && <SOSButton rideId={activeRide.requestId || activeRideId} />}
+      {shouldShowSos && <SOSButton rideId={sosRide.requestId || activeRideId} />}
 
       {/* Bottom Nav */}
       <nav className="v-nav">
