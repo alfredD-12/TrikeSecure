@@ -582,8 +582,8 @@ function ActiveRideDropoffMarker() {
     );
   }
 
-  // Driver view: show dropoff markers for all rides
-  const dropoffRides = activeDriverRides.filter((r) => r.dropoffLat != null && r.dropoffLng != null);
+  // Driver view: show dropoff markers ONLY for in_progress rides (destination hidden until started)
+  const dropoffRides = activeDriverRides.filter((r) => r.status === 'in_progress' && r.dropoffLat != null && r.dropoffLng != null);
   if (dropoffRides.length === 0) return null;
 
   return (

@@ -355,17 +355,31 @@ function DriverActiveRideCard({ ride, label, updating, onAdvance, onFocusTarget,
         <div className={`ml-[4.5px] h-3 w-px ${
           darkMode ? 'bg-slate-700' : 'bg-gray-300'
         }`} />
-        <div className="flex items-start gap-2.5">
-          <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500" />
-          <div className="min-w-0">
-            <p className={`text-[10px] font-black uppercase tracking-wider ${
-              darkMode ? 'text-gray-400' : 'text-gray-400'
-            }`}>Dropoff</p>
-            <p className={`truncate text-xs font-bold ${
-              darkMode ? 'text-gray-200' : 'text-gray-800'
-            }`}>{ride?.dropoffLocation || 'Not specified'}</p>
+        {ride?.status === 'in_progress' ? (
+          <div className="flex items-start gap-2.5">
+            <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500" />
+            <div className="min-w-0">
+              <p className={`text-[10px] font-black uppercase tracking-wider ${
+                darkMode ? 'text-gray-400' : 'text-gray-400'
+              }`}>Dropoff</p>
+              <p className={`truncate text-xs font-bold ${
+                darkMode ? 'text-gray-200' : 'text-gray-800'
+              }`}>{ride?.dropoffLocation || 'Not specified'}</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-start gap-2.5" style={{ opacity: 0.4 }}>
+            <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-400" />
+            <div className="min-w-0">
+              <p className={`text-[10px] font-black uppercase tracking-wider ${
+                darkMode ? 'text-gray-400' : 'text-gray-400'
+              }`}>Destination</p>
+              <p className={`truncate text-xs font-bold italic ${
+                darkMode ? 'text-gray-500' : 'text-gray-400'
+              }`}>Unlocks when ride starts</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-3 flex gap-2">
@@ -1258,9 +1272,9 @@ export default function DriverView({ mapRef }) {
                 <span className="v-ride-toast__dot v-ride-toast__dot--pickup" />
                 <span className="v-ride-toast__route-text">{newRideToast.pickup_location || 'Pickup'}</span>
               </div>
-              <div className="v-ride-toast__route-row">
+              <div className="v-ride-toast__route-row" style={{ opacity: 0.45 }}>
                 <span className="v-ride-toast__dot v-ride-toast__dot--dropoff" />
-                <span className="v-ride-toast__route-text">{newRideToast.dropoff_location || 'Dropoff'}</span>
+                <span className="v-ride-toast__route-text" style={{ fontStyle: 'italic' }}>Destination hidden — unlocks when you start the ride</span>
               </div>
             </div>
 
@@ -1571,13 +1585,11 @@ export default function DriverView({ mapRef }) {
                         </div>
                       </div>
                       <div className="w-px h-3 bg-gray-300 ml-[4.5px]" />
-                      <div className="flex items-start gap-2.5">
-                        <div className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 mt-1" />
+                      <div className="flex items-start gap-2.5" style={{ opacity: 0.45 }}>
+                        <div className="w-2.5 h-2.5 rounded-full bg-red-400 shrink-0 mt-1" />
                         <div className="min-w-0">
-                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Dropoff</p>
-                          <p className="text-xs font-bold text-gray-800 truncate">
-                            {req.dropoff_location || 'Not specified'}
-                          </p>
+                          <p className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Destination</p>
+                          <p className="text-xs font-bold text-gray-500 italic">Unlocks when ride starts</p>
                         </div>
                       </div>
                     </div>
