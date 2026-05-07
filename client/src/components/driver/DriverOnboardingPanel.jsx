@@ -684,14 +684,17 @@ export default function DriverOnboardingPanel({
       setPathMode('create');
     }
 
-    setMembershipForm({
-      todaId: driverProfile.todaId ? String(driverProfile.todaId) : '',
-      licenseNumber: driverProfile.licenseNumber || '',
-      licenseExpiryDate: driverProfile.licenseExpiryDate ? String(driverProfile.licenseExpiryDate).slice(0, 10) : '',
-      contactNumber: driverProfile.contactNumber || '',
-      driverLicenseDocument: driverProfile.driverLicenseDocument || '',
-      validIdDocument: driverProfile.validIdDocument || '',
-    });
+    setMembershipForm((prev) => ({
+      todaId: driverProfile.todaId ? String(driverProfile.todaId) : prev.todaId,
+      // Prefer DB values; otherwise keep what OCR/user already filled (don't clear on profile refresh)
+      licenseNumber: driverProfile.licenseNumber || prev.licenseNumber,
+      licenseExpiryDate: driverProfile.licenseExpiryDate
+        ? String(driverProfile.licenseExpiryDate).slice(0, 10)
+        : prev.licenseExpiryDate,
+      contactNumber: driverProfile.contactNumber || prev.contactNumber,
+      driverLicenseDocument: driverProfile.driverLicenseDocument || prev.driverLicenseDocument,
+      validIdDocument: driverProfile.validIdDocument || prev.validIdDocument,
+    }));
 
     // Unlock fields that already have values from a previous submission
     if (driverProfile.licenseNumber) {
@@ -703,19 +706,22 @@ export default function DriverOnboardingPanel({
       setTodaExpiryLocked(false);
     }
 
-    setTodaForm({
-      todaName: driverProfile.ownedToda?.todaName || '',
-      barangayCode: findBarangayCodeByName(nasugbuBarangays, driverProfile.ownedToda?.barangay),
-      routeDescription: driverProfile.ownedToda?.routeDescription || '',
-      letterOfIntentDocument: driverProfile.ownedToda?.letterOfIntentDocument || '',
-      officersListDocument: driverProfile.ownedToda?.officersListDocument || '',
-      barangayApprovalDocument: driverProfile.ownedToda?.barangayApprovalDocument || '',
-      licenseNumber: driverProfile.licenseNumber || '',
-      licenseExpiryDate: driverProfile.licenseExpiryDate ? String(driverProfile.licenseExpiryDate).slice(0, 10) : '',
-      contactNumber: driverProfile.contactNumber || '',
-      driverLicenseDocument: driverProfile.driverLicenseDocument || '',
-      validIdDocument: driverProfile.validIdDocument || '',
-    });
+    setTodaForm((prev) => ({
+      todaName: driverProfile.ownedToda?.todaName || prev.todaName,
+      barangayCode: findBarangayCodeByName(nasugbuBarangays, driverProfile.ownedToda?.barangay) || prev.barangayCode,
+      routeDescription: driverProfile.ownedToda?.routeDescription || prev.routeDescription,
+      letterOfIntentDocument: driverProfile.ownedToda?.letterOfIntentDocument || prev.letterOfIntentDocument,
+      officersListDocument: driverProfile.ownedToda?.officersListDocument || prev.officersListDocument,
+      barangayApprovalDocument: driverProfile.ownedToda?.barangayApprovalDocument || prev.barangayApprovalDocument,
+      // Same as membership: preserve OCR/user values when DB doesn't have them yet
+      licenseNumber: driverProfile.licenseNumber || prev.licenseNumber,
+      licenseExpiryDate: driverProfile.licenseExpiryDate
+        ? String(driverProfile.licenseExpiryDate).slice(0, 10)
+        : prev.licenseExpiryDate,
+      contactNumber: driverProfile.contactNumber || prev.contactNumber,
+      driverLicenseDocument: driverProfile.driverLicenseDocument || prev.driverLicenseDocument,
+      validIdDocument: driverProfile.validIdDocument || prev.validIdDocument,
+    }));
 
     setFranchiseForm((prev) => ({
       bodyNumber: driverProfile.bodyNumber || '',
