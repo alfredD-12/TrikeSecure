@@ -724,17 +724,18 @@ export default function DriverOnboardingPanel({
     }));
 
     setFranchiseForm((prev) => ({
-      bodyNumber: driverProfile.bodyNumber || '',
-      plateNumber: driverProfile.plateNumber || '',
-      makeModel: driverProfile.makeModel || '',
-      color: driverProfile.color || '',
-      engineNumber: driverProfile.engineNumber || '',
-      chassisNumber: driverProfile.chassisNumber || '',
+      // Prefer DB values; otherwise keep what the driver already typed (don't clear on profile refresh)
+      bodyNumber: driverProfile.bodyNumber || prev.bodyNumber,
+      plateNumber: driverProfile.plateNumber || prev.plateNumber,
+      makeModel: driverProfile.makeModel || prev.makeModel,
+      color: driverProfile.color || prev.color,
+      engineNumber: driverProfile.engineNumber || prev.engineNumber,
+      chassisNumber: driverProfile.chassisNumber || prev.chassisNumber,
       // Preserve existing QR from DB; keep auto-generated one if none stored yet
       qrCodeValue: driverProfile.qrCodeValue || prev.qrCodeValue,
-      todaCertificateDocument: driverProfile.todaCertificateDocument || '',
-      orCrDocument: driverProfile.orCrDocument || '',
-      insuranceDocument: driverProfile.insuranceDocument || '',
+      todaCertificateDocument: driverProfile.todaCertificateDocument || prev.todaCertificateDocument,
+      orCrDocument: driverProfile.orCrDocument || prev.orCrDocument,
+      insuranceDocument: driverProfile.insuranceDocument || prev.insuranceDocument,
     }));
   }, [driverProfile, nasugbuBarangays]);
 
